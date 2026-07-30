@@ -2,7 +2,7 @@ name: RecordLabsiOS
 options:
   bundleIdPrefix: com.recordlabs.music.ios
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "15.0"
 configs:
   Debug: debug
   Release: release
@@ -10,7 +10,7 @@ targets:
   RecordLabsiOS:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "15.0"
     sources:
       - path: RecordLabsiOS
         excludes:

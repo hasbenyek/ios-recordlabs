@@ -13,7 +13,7 @@ struct SearchScreen: View {
     @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List(results) { song in
                 SongRow(song: song) {
                     playerConnection.playQueue(results, startIndex: results.firstIndex(of: song) ?? 0)
@@ -23,17 +23,18 @@ struct SearchScreen: View {
                 if isSearching {
                     ProgressView()
                 } else if let errorMessage {
-                    ContentUnavailableView("Search failed", systemImage: "wifi.exclamationmark", description: Text(errorMessage))
+                    EmptyStateView(title: "Search failed", systemImage: "wifi.exclamationmark", message: errorMessage)
                 } else if query.isEmpty {
-                    ContentUnavailableView("Search songs", systemImage: "magnifyingglass")
+                    EmptyStateView(title: "Search songs", systemImage: "magnifyingglass")
                 } else if results.isEmpty {
-                    ContentUnavailableView.search(text: query)
+                    EmptyStateView(title: "No results for \"\(query)\"", systemImage: "magnifyingglass")
                 }
             }
             .navigationTitle("Search")
         }
+        .navigationViewStyle(.stack)
         .searchable(text: $query)
-        .onChange(of: query) { _, newValue in
+        .onChange(of: query) { newValue in
             searchTask?.cancel()
             guard !newValue.isEmpty else {
                 results = []
@@ -41,7 +42,7 @@ struct SearchScreen: View {
                 return
             }
             searchTask = Task {
-                try? await Task.sleep(for: .milliseconds(350)) // debounce
+                try? await Task.sleep(nanoseconds: 350_000_000) // debounce
                 guard !Task.isCancelled else { return }
                 await runSearch(newValue)
             }

@@ -5,7 +5,7 @@ struct QueueView: View {
     @EnvironmentObject private var playerConnection: PlayerConnection
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 ForEach(Array(playerConnection.queue.enumerated()), id: \.element.id) { index, song in
                     SongRow(song: song) {
@@ -16,6 +16,7 @@ struct QueueView: View {
             }
             .navigationTitle("Up next")
         }
+        .navigationViewStyle(.stack)
     }
 }
 

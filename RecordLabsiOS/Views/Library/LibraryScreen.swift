@@ -12,7 +12,7 @@ struct LibraryScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack {
                 Picker("Section", selection: $section) {
                     ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
@@ -50,6 +50,7 @@ struct LibraryScreen: View {
             }
             .navigationTitle("Library")
         }
+        .navigationViewStyle(.stack)
     }
 }
 

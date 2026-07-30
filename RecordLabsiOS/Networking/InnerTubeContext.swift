@@ -37,9 +37,13 @@ struct YouTubeLocale {
     var hl: String
 
     static var current: YouTubeLocale {
+        // `Locale.current.region`/`.language` (the newer Locale.Region/
+        // Locale.Language API) needs iOS 16+; regionCode/languageCode are
+        // the iOS 15-compatible equivalents (deprecated on newer OSes, but
+        // deprecation warnings don't block compilation or affect behavior).
         YouTubeLocale(
-            gl: Locale.current.region?.identifier ?? "US",
-            hl: Locale.current.language.languageCode?.identifier ?? "en"
+            gl: Locale.current.regionCode ?? "US",
+            hl: Locale.current.languageCode ?? "en"
         )
     }
 }

@@ -14,7 +14,7 @@ struct HomeScreen: View {
     @State private var usingFallbackData = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 if usingFallbackData {
                     Section {
@@ -39,6 +39,7 @@ struct HomeScreen: View {
             .task { await loadHome() }
             .refreshable { await loadHome() }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func loadHome() async {

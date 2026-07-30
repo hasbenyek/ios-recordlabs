@@ -10,7 +10,7 @@ struct FullPlayerView: View {
     @State private var showQueue = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 24) {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(.quaternary)
@@ -73,7 +73,9 @@ struct FullPlayerView: View {
             }
             .padding(.top, 24)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                // .topBarLeading needs iOS 16+; .navigationBarLeading is the
+                // iOS 15-compatible placement (same visual result here).
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") { isExpanded = false }
                 }
             }
@@ -81,6 +83,7 @@ struct FullPlayerView: View {
                 QueueView()
             }
         }
+        .navigationViewStyle(.stack)
     }
 }
 

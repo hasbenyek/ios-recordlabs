@@ -9,7 +9,7 @@ struct ListenTogetherScreen: View {
     @StateObject private var session = ListenTogetherSession()
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 Section {
                     VStack(spacing: 12) {
@@ -67,6 +67,7 @@ struct ListenTogetherScreen: View {
             }
             .navigationTitle("Listen Together")
         }
+        .navigationViewStyle(.stack)
         .onDisappear { session.stop() }
     }
 
