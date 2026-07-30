@@ -60,7 +60,7 @@ actor CipherDeobfuscator {
 
         do {
             let webView = try await getOrCreateWebView(forceRefresh: false)
-            guard webView.nFunctionAvailable else { return url }
+            guard await webView.nFunctionAvailable else { return url }
             let transformed = try await webView.transformN(nValue)
             items[nIndex] = URLQueryItem(name: "n", value: transformed)
             components.queryItems = items

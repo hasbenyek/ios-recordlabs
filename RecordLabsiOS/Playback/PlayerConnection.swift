@@ -35,8 +35,19 @@ final class PlayerConnection: ObservableObject {
 
     init() {
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
-            guard let self, time.isNumeric else { return }
-            self.position = time.seconds
+            // addPeriodicTimeObserver's closure isn't @MainActor-typed even
+            // though `queue: .main` guarantees it runs there at runtime, so
+            // Swift's concurrency checker still treats it as a plain
+            // Sendable closure - mutating a @MainActor property directly
+            // from it is only a warning today but becomes a hard error under
+            // the Swift 6 language mode. Hop back onto the actor explicitly,
+            // same pattern already used below for the AVPlayerItem
+            // did-play-to-end-time notification.
+            guard time.isNumeric else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.position = time.seconds
+            }
         }
 
         NotificationCenter.default.addObserver(

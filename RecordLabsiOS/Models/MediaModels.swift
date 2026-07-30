@@ -7,6 +7,20 @@ import Foundation
 struct ArtistRef: Identifiable, Hashable, Codable {
     var id: String
     var name: String
+
+    init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
+    /// Convenience for turning a full `Artist` (as loaded for the Artist
+    /// screen/library) into the lightweight reference `Song`/`Album` embed,
+    /// mirroring how Android's `Song`/`Album` entities only keep an artist
+    /// id/name pair rather than the full `Artist` row.
+    init(_ artist: Artist) {
+        self.id = artist.id
+        self.name = artist.name
+    }
 }
 
 struct AlbumRef: Identifiable, Hashable, Codable {
