@@ -1,0 +1,111 @@
+name: iOS Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-simulator:
+    name: Build (iOS Simulator, unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for Simulator
+        run: |
+          xcodebuild build \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
+
+  # ---------------------------------------------------------------------
+  # Archive + export a real, installable .ipa. Only runs once you've added
+  # your own Apple Developer signing secrets to this repo's
+  # Settings → Secrets and variables → Actions. Nobody else can create these
+  # for you — they come from your developer.apple.com account:
+  #   IOS_DIST_CERTIFICATE_P12_BASE64  – distribution cert, base64-encoded
+  #   IOS_DIST_CERTIFICATE_PASSWORD    – that .p12's password
+  #   IOS_PROVISIONING_PROFILE_BASE64  – matching provisioning profile, base64
+  #   IOS_TEAM_ID                      – your 10-character Apple Team ID
+  # See "README.md" → "Producing a signed .ipa via CI" for the exact steps
+  # to generate and encode these. Without them, this job is skipped and
+  # only the unsigned simulator build above runs.
+  # ---------------------------------------------------------------------
+  archive-ipa:
+    name: Archive & export signed .ipa
+    runs-on: macos-latest
+    needs: build-simulator
+    if: ${{ secrets.IOS_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Import signing certificate & provisioning profile
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERTIFICATE_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$P12_BASE64" | base64 --decode > $RUNNER_TEMP/cert.p12
+          echo "$PROFILE_BASE64" | base64 --decode > $RUNNER_TEMP/profile.mobileprovision
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import $RUNNER_TEMP/cert.p12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $RUNNER_TEMP/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS \
+            -archivePath $RUNNER_TEMP/RecordLabsiOS.xcarchive \
+            -destination 'generic/platform=iOS' \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual
+
+      - name: Export .ipa
+        run: |
+          cat > $RUNNER_TEMP/ExportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>ad-hoc</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/RecordLabsiOS.xcarchive \
+            -exportPath $RUNNER_TEMP/export \
+            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecordLabsiOS-ipa
+          path: ${{ runner.temp }}/export/*.ipa
