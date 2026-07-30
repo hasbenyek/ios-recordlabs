@@ -27,6 +27,23 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   # ---------------------------------------------------------------------
+  # The `secrets` context isn't allowed directly in a job-level `if:`
+  # (GitHub only permits `github, needs, vars, inputs` there — using
+  # `secrets` fails workflow validation with "Unrecognized named-value:
+  # 'secrets'" before any job even runs). So the presence check happens in
+  # its own cheap step (`run:` *does* allow `secrets`), and archive-ipa's
+  # `if:` reads that job's output via `needs` instead.
+  # ---------------------------------------------------------------------
+  check-signing-secret:
+    name: Check if signing secrets are configured
+    runs-on: ubuntu-latest
+    outputs:
+      has-team-id: ${{ steps.check.outputs.has-team-id }}
+    steps:
+      - id: check
+        run: echo "has-team-id=${{ secrets.IOS_TEAM_ID != '' }}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------
   # Archive + export a real, installable .ipa. Only runs once you've added
   # your own Apple Developer signing secrets to this repo's
   # Settings → Secrets and variables → Actions. Nobody else can create these
@@ -42,8 +59,8 @@ jobs:
   archive-ipa:
     name: Archive & export signed .ipa
     runs-on: macos-latest
-    needs: build-simulator
-    if: ${{ secrets.IOS_TEAM_ID != '' }}
+    needs: [build-simulator, check-signing-secret]
+    if: needs.check-signing-secret.outputs.has-team-id == 'true'
     steps:
       - uses: actions/checkout@v4
 
