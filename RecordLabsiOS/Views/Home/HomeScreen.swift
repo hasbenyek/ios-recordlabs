@@ -12,7 +12,9 @@ import SwiftUI
 /// `SearchResponseParser`'s doc comment for why.
 struct HomeScreen: View {
     @EnvironmentObject private var playerConnection: PlayerConnection
+    @StateObject private var diagnosticsCenter = SearchDiagnosticsCenter.shared
     @State private var state: LoadState<[Song]> = .idle
+    @State private var showDiagnostics = false
 
     private let cardSize: CGFloat = 140
 
@@ -20,10 +22,20 @@ struct HomeScreen: View {
         NavigationView {
             content
                 .navigationTitle("Home")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button { showDiagnostics = true } label: {
+                            Label("Diagnostics", systemImage: "stethoscope")
+                        }
+                    }
+                }
                 .task { await loadHome() }
                 .refreshable { await loadHome() }
         }
         .navigationViewStyle(.stack)
+        .sheet(isPresented: $showDiagnostics) {
+            SearchDiagnosticsView(report: diagnosticsCenter.latest)
+        }
     }
 
     @ViewBuilder
@@ -111,7 +123,11 @@ struct HomeScreen: View {
         do {
             let data = try await InnerTubeClient.shared.browse(browseId: "FEmusic_home")
             let parsed = SearchResponseParser.parseSongs(from: data)
-            state = parsed.songs.isEmpty ? .empty : .loaded(parsed.songs)
+            if parsed.songs.isEmpty {
+                state = .error(.parsing(parsed.diagnostics.first ?? "Home response received, but no supported song renderer was parsed."))
+            } else {
+                state = .loaded(parsed.songs)
+            }
         } catch {
             state = .error(.network(error.localizedDescription))
         }

@@ -46,6 +46,48 @@ final class SearchResponseParserTests: XCTestCase {
         XCTAssertTrue(result.songs.isEmpty)
     }
 
+    func testResponsiveListSongRendererIsAccepted() {
+        let result = SearchResponseParser.parseSongs(from: fixture(videoId: "responsive", title: "Song", artist: "Artist"))
+        XCTAssertEqual(result.songs.first?.id, "responsive")
+        XCTAssertEqual(result.metrics.candidateSongRenderersFound, 1)
+    }
+
+    func testTwoRowSongRendererWithWatchEndpointIsAccepted() throws {
+        let object: [String: Any] = ["musicTwoRowItemRenderer": [
+            "navigationEndpoint": ["watchEndpoint": ["videoId": "two-row"]],
+            "title": ["runs": [["text": "Two Row Song"]]],
+            "subtitle": ["runs": [["text": "Artist"], ["text": " • "], ["text": "3:10"]]]
+        ]]
+        let result = SearchResponseParser.parseSongs(from: try JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(result.songs.map(\.id), ["two-row"])
+    }
+
+    func testNestedShelfResponseIsParsed() throws {
+        let nested: [String: Any] = ["contents": [["musicShelfRenderer": ["contents": [fixtureObject(videoId: "nested", title: "Nested", artist: "Artist")]]]]]
+        let result = SearchResponseParser.parseSongs(from: try JSONSerialization.data(withJSONObject: nested))
+        XCTAssertEqual(result.songs.map(\.id), ["nested"])
+    }
+
+    func testUnsupportedRendererReturnsParserIncompatibleDiagnostics() throws {
+        let data = try JSONSerialization.data(withJSONObject: ["musicAlbumShelfRenderer": ["title": ["simpleText": "Album"]]])
+        let result = SearchResponseParser.parseSongs(from: data)
+        XCTAssertEqual(result.metrics.finalErrorCategory, "parserIncompatible")
+        XCTAssertTrue(result.diagnostics.contains("Search response received, but no supported song renderer was parsed."))
+    }
+
+    func testAlbumArtistAndPlaylistNavigationAreRejected() throws {
+        let values: [[String: Any]] = ["albumId", "artistId", "playlistId"].map { browseId in
+            ["musicTwoRowItemRenderer": [
+                "navigationEndpoint": ["browseEndpoint": ["browseId": browseId]],
+                "title": ["runs": [["text": browseId]]],
+                "subtitle": ["runs": [["text": "Artist"]]]
+            ]]
+        }
+        let result = SearchResponseParser.parseSongs(from: try JSONSerialization.data(withJSONObject: values))
+        XCTAssertTrue(result.songs.isEmpty)
+        XCTAssertEqual(result.metrics.rejectedMissingVideoId, 3)
+    }
+
     private func fixture(videoId: String?, title: String?, artist: String?) -> Data {
         try! JSONSerialization.data(withJSONObject: fixtureObject(videoId: videoId, title: title, artist: artist))
     }

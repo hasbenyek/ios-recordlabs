@@ -6,23 +6,33 @@ import SwiftUI
 /// real state with a Retry action, never fabricated songs.
 struct SearchScreen: View {
     @EnvironmentObject private var playerConnection: PlayerConnection
+    @StateObject private var diagnosticsCenter = SearchDiagnosticsCenter.shared
     @State private var query = ""
     @State private var state: LoadState<[Song]> = .idle
-    @State private var diagnostics: [String] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var showDiagnostics = false
 
     var body: some View {
         NavigationView {
             content
                 .navigationTitle("Search")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button { showDiagnostics = true } label: {
+                            Label("Diagnostics", systemImage: "stethoscope")
+                        }
+                    }
+                }
         }
         .navigationViewStyle(.stack)
         .searchable(text: $query)
+        .sheet(isPresented: $showDiagnostics) {
+            SearchDiagnosticsView(report: diagnosticsCenter.latest)
+        }
         .onChange(of: query) { newValue in
             searchTask?.cancel()
             guard !newValue.isEmpty else {
                 state = .idle
-                diagnostics = []
                 return
             }
             // Debounce: wait for a pause in typing before spending a real
@@ -43,7 +53,7 @@ struct SearchScreen: View {
         case .loading:
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case .empty:
-            EmptyStateView(title: "No results for \"\(query)\"", systemImage: "magnifyingglass")
+            EmptyStateView(title: "No results for \"\(query)\"", systemImage: "magnifyingglass", message: "No supported song result was returned by the search clients.")
         case .error(let error):
             ErrorStateView(title: "Search failed", message: error.message) {
                 let q = query
@@ -56,13 +66,6 @@ struct SearchScreen: View {
                         playerConnection.playQueue(songs, startIndex: songs.firstIndex(of: song) ?? 0)
                     }
                 }
-                if !diagnostics.isEmpty {
-                    Section {
-                        Text("\(diagnostics.count) result group(s) couldn't be fully parsed and were skipped.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
             .listStyle(.plain)
         }
@@ -71,15 +74,19 @@ struct SearchScreen: View {
     private func runSearch(_ text: String) async {
         state = .loading
         do {
-            let data = try await InnerTubeClient.shared.search(query: text)
+            let result = try await SearchService().search(query: text)
             guard !Task.isCancelled else { return }
-            let parsed = SearchResponseParser.parseSongs(from: data)
-            guard !Task.isCancelled else { return }
-            diagnostics = parsed.diagnostics
-            state = parsed.songs.isEmpty ? .empty : .loaded(parsed.songs)
+            diagnosticsCenter.publish(result.diagnostics)
+            state = .loaded(result.songs)
         } catch {
             guard !Task.isCancelled else { return }
-            state = .error(.network(error.localizedDescription))
+            if let serviceError = error as? SearchServiceError {
+                diagnosticsCenter.publish(serviceError.report)
+                let message = serviceError.report.safeMessage ?? "All search clients failed."
+                state = .error(serviceError.report.finalErrorCategory == "parserIncompatible" ? .parsing(message) : .network(message))
+            } else {
+                state = .error(.network(error.localizedDescription))
+            }
         }
     }
 }

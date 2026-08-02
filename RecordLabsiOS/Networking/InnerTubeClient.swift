@@ -8,7 +8,7 @@ protocol StreamResolverClient {
     func player(videoId: String, identity: YouTubeClientIdentity, signatureTimestamp: Int?) async throws -> Data
 }
 
-actor InnerTubeClient: StreamResolverClient {
+actor InnerTubeClient: StreamResolverClient, SearchRequesting {
     static let shared = InnerTubeClient()
 
     private let session: URLSession
@@ -24,6 +24,15 @@ actor InnerTubeClient: StreamResolverClient {
         identity: YouTubeClientIdentity,
         body: Encodable
     ) async throws -> Data {
+        let response = try await requestResponse(path: path, identity: identity, body: body)
+        return response.data
+    }
+
+    private func requestResponse(
+        path: String,
+        identity: YouTubeClientIdentity,
+        body: Encodable
+    ) async throws -> SearchHTTPResponse {
         var request = URLRequest(url: YouTubeClientIdentity.apiURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -39,10 +48,20 @@ actor InnerTubeClient: StreamResolverClient {
         request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
 
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            throw InnerTubeError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+        guard let http = response as? HTTPURLResponse else {
+            throw InnerTubeError.badStatus(-1)
         }
-        return data
+        guard 200..<300 ~= http.statusCode else {
+            throw InnerTubeError.badStatus(http.statusCode)
+        }
+        return SearchHTTPResponse(
+            data: data,
+            client: identity,
+            endpointPath: request.url?.path ?? "/youtubei/v1/\(path)",
+            statusCode: http.statusCode,
+            contentType: http.value(forHTTPHeaderField: "Content-Type") ?? http.mimeType ?? "unknown",
+            byteCount: data.count
+        )
     }
 
     func search(query: String, identity: YouTubeClientIdentity = .webRemix) async throws -> Data {
@@ -52,6 +71,15 @@ actor InnerTubeClient: StreamResolverClient {
             params: nil
         )
         return try await request(path: "search", identity: identity, body: body)
+    }
+
+    func searchResponse(query: String, identity: YouTubeClientIdentity) async throws -> SearchHTTPResponse {
+        let body = SearchRequestBody(
+            context: InnerTubeContext(identity: identity, locale: locale, visitorData: visitorData),
+            query: query,
+            params: nil
+        )
+        return try await requestResponse(path: "search", identity: identity, body: body)
     }
 
     /// `browseId: "FEmusic_home"` is YouTube Music's own id for the signed-out
