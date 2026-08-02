@@ -4,7 +4,11 @@ import Foundation
 /// (headers/body only — it does not attempt to replicate the ~100-file
 /// response-model tree the Android `innertube` module uses for full
 /// browse/library parity; see `SearchResponse.swift` for what's parsed).
-actor InnerTubeClient {
+protocol StreamResolverClient {
+    func player(videoId: String, identity: YouTubeClientIdentity, signatureTimestamp: Int?) async throws -> Data
+}
+
+actor InnerTubeClient: StreamResolverClient {
     static let shared = InnerTubeClient()
 
     private let session: URLSession

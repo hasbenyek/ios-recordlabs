@@ -23,6 +23,10 @@ struct RootView: View {
                     .padding(.bottom, 49) // sits just above the tab bar
             }
         }
+        // Same brand color as Android's `DefaultThemeColor` (see Theme.swift)
+        // - applied once here so every default-tinted control (tab bar
+        // selection, nav bar buttons, etc.) picks it up app-wide.
+        .tint(Theme.accent)
         .fullScreenCover(isPresented: $isPlayerExpanded) {
             FullPlayerView(isExpanded: $isPlayerExpanded)
         }

@@ -1,76 +1,160 @@
 import Foundation
 
-/// Resolves a playable audio URL for a YouTube video id.
+/// Resolves a playable, `AVPlayer`-compatible audio URL for a YouTube video id.
+///
+/// Format selection is delegated to `AudioFormatSelector` (kept separate so
+/// it's unit-testable without networking) — see that file's doc comment
+/// for why iOS requires AAC/MP4 and rejects Opus/WebM, unlike Android.
 ///
 /// Two tiers, in order:
 /// 1. **Direct-URL clients** (`YouTubeClientIdentity.directURLFallbackOrder`)
-///    — VISIONOS/ANDROID_VR/TVHTML5_SIMPLY_EMBEDDED_PLAYER historically
-///    return a `url` with no `signatureCipher` at all, so no deciphering is
-///    needed. Cheapest and fastest when it works.
+///    — historically return a `url` with no `signatureCipher`, no deciphering needed.
 /// 2. **Cipher-capable client** (`YouTubeClientIdentity.androidMobile`) — if
-///    every direct-URL client came back cipher-only or failed, this tries
-///    the ANDROID client and, if its format has a `signatureCipher`, runs it
-///    through `CipherDeobfuscator` (a real WebView executing YouTube's own
-///    player.js — see that file for exactly what it does and doesn't
-///    handle) to produce a playable URL.
+///    every direct-URL client came back cipher-only, unsupported-codec-only,
+///    or failed, this tries the ANDROID client and runs any
+///    `signatureCipher` format through `CipherDeobfuscator`.
 ///
-/// Deliberately still NOT implemented: BotGuard "PoToken" generation, which
-/// only `WEB_REMIX`/`WEB_CREATOR`/`TVHTML5` require (not the ANDROID
-/// client used here). That remains the one genuinely unimplemented piece —
-/// see `CipherDeobfuscator.swift`'s doc comment. If both tiers here fail,
-/// that's most likely YouTube having tightened the ANDROID client too,
-/// which would require PoToken support to work around.
+/// Every attempt is recorded into a `StreamDiagnostics` value so failures
+/// are explainable in-app without ever surfacing the resolved URL itself.
 enum StreamResolver {
-    static func resolveStreamURL(videoId: String) async throws -> URL {
+    static func resolveStreamURL(
+        videoId: String,
+        client: StreamResolverClient = InnerTubeClient.shared
+    ) async throws -> ResolvedStream {
+        var attemptedClients: [String] = []
+        var formatsSeen: Set<String> = []
+
         for identity in YouTubeClientIdentity.directURLFallbackOrder {
-            if let url = try? await resolveDirect(videoId: videoId, identity: identity) {
-                return url
+            try Task.checkCancellation()
+            attemptedClients.append(identity.clientName)
+            do {
+                if let resolved = try await resolveDirect(videoId: videoId, identity: identity, client: client, attempted: attemptedClients, formatsSeen: &formatsSeen) {
+                    return resolved
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Keep the fallback chain alive for HTTP, decoding, and
+                // other client-specific failures, not only URLError.
+                if attemptedClients.count == YouTubeClientIdentity.directURLFallbackOrder.count,
+                   let urlError = error as? URLError {
+                    throw PlayerError.network(urlError.localizedDescription)
+                }
+                continue
             }
         }
 
-        if let url = try? await resolveViaCipher(videoId: videoId) {
-            return url
+        attemptedClients.append(YouTubeClientIdentity.androidMobile.clientName)
+        try Task.checkCancellation()
+        if let resolved = try await resolveViaCipher(videoId: videoId, client: client, attempted: attemptedClients, formatsSeen: &formatsSeen) {
+            return resolved
         }
 
-        throw InnerTubeError.noPlayableFormat
+        if formatsSeen.isEmpty {
+            throw PlayerError.streamResolutionFailure("No audio formats were returned by any client")
+        }
+        throw PlayerError.unsupportedFormat(availableFormats: Array(formatsSeen).sorted())
     }
 
-    private static func resolveDirect(videoId: String, identity: YouTubeClientIdentity) async throws -> URL {
-        let data = try await InnerTubeClient.shared.player(videoId: videoId, identity: identity)
+    private static func resolveDirect(
+        videoId: String,
+        identity: YouTubeClientIdentity,
+        client: StreamResolverClient,
+        attempted: [String],
+        formatsSeen: inout Set<String>
+    ) async throws -> ResolvedStream? {
+        let data = try await client.player(videoId: videoId, identity: identity, signatureTimestamp: nil)
         let response = try JSONDecoder().decode(PlayerResponse.self, from: data)
-        guard response.playabilityStatus.status == "OK" else { throw InnerTubeError.noPlayableFormat }
+        guard response.playabilityStatus.status == "OK" else { return nil }
 
-        let playableAudioFormats = (response.streamingData?.adaptiveFormats ?? [])
-            .filter { $0.mimeType.hasPrefix("audio/") && $0.signatureCipher == nil && $0.url != nil }
-            .sorted { $0.bitrate > $1.bitrate }
+        let allAudio = response.streamingData?.adaptiveFormats ?? []
+        formatsSeen.formUnion(AudioFormatSelector.describeAudioFormats(allAudio))
 
-        guard let best = playableAudioFormats.first, let urlString = best.url, let url = URL(string: urlString) else {
-            throw InnerTubeError.noPlayableFormat
+        guard let best = AudioFormatSelector.selectBest(from: allAudio.filter { $0.url != nil && $0.signatureCipher == nil }),
+              let urlString = best.url, let url = URL(string: urlString) else {
+            return nil
         }
-        return url
+
+        return ResolvedStream(
+            url: url,
+            diagnostics: StreamDiagnostics(
+                selectedClient: identity.clientName,
+                pathType: .direct,
+                mimeType: best.container,
+                codec: best.codec ?? "unknown",
+                bitrateKbps: best.bitrate / 1000,
+                expiresInSeconds: response.streamingData?.expiresInSeconds.flatMap(Int.init),
+                fallbackClientsAttempted: attempted,
+                finalErrorCategory: nil
+            )
+        )
     }
 
-    private static func resolveViaCipher(videoId: String) async throws -> URL {
+    private static func resolveViaCipher(
+        videoId: String,
+        client: StreamResolverClient,
+        attempted: [String],
+        formatsSeen: inout Set<String>
+    ) async throws -> ResolvedStream? {
         let identity = YouTubeClientIdentity.androidMobile
         let signatureTimestamp = await CipherDeobfuscator.shared.signatureTimestamp()
 
-        let data = try await InnerTubeClient.shared.player(videoId: videoId, identity: identity, signatureTimestamp: signatureTimestamp)
-        let response = try JSONDecoder().decode(PlayerResponse.self, from: data)
-        guard response.playabilityStatus.status == "OK" else { throw InnerTubeError.noPlayableFormat }
-
-        let audioFormats = (response.streamingData?.adaptiveFormats ?? [])
-            .filter { $0.mimeType.hasPrefix("audio/") }
-            .sorted { $0.bitrate > $1.bitrate }
-
-        for format in audioFormats {
-            if let urlString = format.url, let url = URL(string: urlString) {
-                return await CipherDeobfuscator.shared.transformNParam(in: url)
-            }
-            if let cipher = format.signatureCipher {
-                let url = try await CipherDeobfuscator.shared.deobfuscateStreamURL(signatureCipher: cipher)
-                return await CipherDeobfuscator.shared.transformNParam(in: url)
-            }
+        let data: Data
+        do {
+            data = try await client.player(videoId: videoId, identity: identity, signatureTimestamp: signatureTimestamp)
+        } catch {
+            throw PlayerError.network(error.localizedDescription)
         }
-        throw InnerTubeError.noPlayableFormat
+
+        let response: PlayerResponse
+        do {
+            response = try JSONDecoder().decode(PlayerResponse.self, from: data)
+        } catch {
+            throw PlayerError.streamResolutionFailure("Couldn't parse the player response: \(error.localizedDescription)")
+        }
+        guard response.playabilityStatus.status == "OK" else {
+            throw PlayerError.streamResolutionFailure("YouTube reported this video isn't playable (\(response.playabilityStatus.status))")
+        }
+
+        let allAudio = response.streamingData?.adaptiveFormats ?? []
+        formatsSeen.formUnion(AudioFormatSelector.describeAudioFormats(allAudio))
+
+        guard let best = AudioFormatSelector.selectBest(from: allAudio) else {
+            return nil
+        }
+
+        let resolvedURL: URL
+        if let urlString = best.url, let url = URL(string: urlString) {
+            resolvedURL = await CipherDeobfuscator.shared.transformNParam(in: url)
+        } else if let cipher = best.signatureCipher {
+            let url: URL
+            do {
+                url = try await CipherDeobfuscator.shared.deobfuscateStreamURL(signatureCipher: cipher)
+            } catch {
+                throw PlayerError.cipherFailure(error.localizedDescription)
+            }
+            resolvedURL = await CipherDeobfuscator.shared.transformNParam(in: url)
+        } else {
+            return nil
+        }
+
+        return ResolvedStream(
+            url: resolvedURL,
+            diagnostics: StreamDiagnostics(
+                selectedClient: identity.clientName,
+                pathType: best.signatureCipher != nil ? .cipher : .direct,
+                mimeType: best.container,
+                codec: best.codec ?? "unknown",
+                bitrateKbps: best.bitrate / 1000,
+                expiresInSeconds: response.streamingData?.expiresInSeconds.flatMap(Int.init),
+                fallbackClientsAttempted: attempted,
+                finalErrorCategory: nil
+            )
+        )
     }
+}
+
+struct ResolvedStream {
+    var url: URL
+    var diagnostics: StreamDiagnostics
 }

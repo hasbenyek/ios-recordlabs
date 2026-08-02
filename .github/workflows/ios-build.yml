@@ -26,6 +26,16 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Run XCTest suite
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')
+          test -n "$SIMULATOR_ID"
+          xcodebuild test \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS \
+            -destination "id=$SIMULATOR_ID" \
+            CODE_SIGNING_ALLOWED=NO
+
   # ---------------------------------------------------------------------
   # The `secrets` context isn't allowed directly in a job-level `if:`
   # (GitHub only permits `github, needs, vars, inputs` there — using

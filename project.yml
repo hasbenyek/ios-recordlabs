@@ -33,3 +33,29 @@ targets:
         # generated project, or via CODE_SIGN_STYLE/DEVELOPMENT_TEAM
         # overrides in CI (see .github/workflows/ios-build.yml).
         CODE_SIGN_STYLE: Automatic
+  RecordLabsiOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: RecordLabsiOSTests
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: RecordLabsiOS
+schemes:
+  RecordLabsiOS:
+    build:
+      targets:
+        RecordLabsiOS: all
+        RecordLabsiOSTests: [test]
+    test:
+      config: Debug
+      targets:
+        - RecordLabsiOSTests
+    run:
+      config: Debug
+    archive:
+      config: Release

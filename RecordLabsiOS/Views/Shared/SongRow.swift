@@ -9,10 +9,8 @@ struct SongRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(.quaternary)
+                ArtworkView(url: song.thumbnailURL)
                     .frame(width: 48, height: 48)
-                    .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
@@ -28,7 +26,7 @@ struct SongRow: View {
 
                 if song.isLiked {
                     Image(systemName: "heart.fill")
-                        .foregroundStyle(.pink)
+                        .foregroundStyle(Theme.accent)
                         .font(.caption)
                 }
             }
