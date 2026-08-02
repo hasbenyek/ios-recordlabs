@@ -39,16 +39,31 @@ jobs:
       - name: Boot first available iPhone simulator
         id: simulator
         run: |
+          XCODE_DESTINATIONS=$(xcodebuild -showdestinations \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS)
+
           DEVICE_INFO=$(xcrun simctl list devices available | perl -ne '
             if (/^-- (.+?) --$/) { $runtime = $1; next; }
             if (/^\s*(iPhone[^()]*)\s+\(([0-9A-Fa-f-]{36})\)\s+\((Booted|Shutdown)\)/) {
               print "$1|$2|$3|$runtime\n";
-              exit;
             }
           ')
 
-          test -n "$DEVICE_INFO"
-          IFS='|' read -r SIMULATOR_NAME SIMULATOR_ID SIMULATOR_STATE SIMULATOR_RUNTIME <<< "$DEVICE_INFO"
+          SIMULATOR_NAME=''
+          SIMULATOR_ID=''
+          SIMULATOR_STATE=''
+          SIMULATOR_RUNTIME=''
+          while IFS='|' read -r CANDIDATE_NAME CANDIDATE_ID CANDIDATE_STATE CANDIDATE_RUNTIME; do
+            if echo "$XCODE_DESTINATIONS" | grep -Fq "$CANDIDATE_ID"; then
+              SIMULATOR_NAME="$CANDIDATE_NAME"
+              SIMULATOR_ID="$CANDIDATE_ID"
+              SIMULATOR_STATE="$CANDIDATE_STATE"
+              SIMULATOR_RUNTIME="$CANDIDATE_RUNTIME"
+              break
+            fi
+          done <<< "$DEVICE_INFO"
+
           SIMULATOR_NAME=$(echo "$SIMULATOR_NAME" | sed 's/[[:space:]]*$//')
           test -n "$SIMULATOR_ID"
           test -n "$SIMULATOR_RUNTIME"
@@ -71,6 +86,7 @@ jobs:
             -project RecordLabsiOS.xcodeproj \
             -scheme RecordLabsiOS \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -destination-timeout 180 \
             CODE_SIGNING_ALLOWED=NO
 
   # ---------------------------------------------------------------------
