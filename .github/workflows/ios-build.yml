@@ -34,7 +34,7 @@ jobs:
           SIMULATOR_ID=$(xcodebuild -showdestinations \
             -project RecordLabsiOS.xcodeproj \
             -scheme RecordLabsiOS | \
-            sed -nE 's/.*platform:iOS Simulator, id: ([0-9A-F-]{36}),.*/\1/p' | head -n 1)
+            sed -nE 's/.*platform:iOS Simulator,.*id: ([0-9A-F-]{36}),.*/\1/p' | head -n 1)
           test -n "$SIMULATOR_ID"
           echo "Using Xcode-eligible simulator: $SIMULATOR_ID"
           xcodebuild test \
