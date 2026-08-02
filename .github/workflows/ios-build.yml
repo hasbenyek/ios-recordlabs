@@ -28,19 +28,10 @@ jobs:
 
       - name: Run XCTest suite
         run: |
-          xcodebuild -showdestinations \
-            -project RecordLabsiOS.xcodeproj \
-            -scheme RecordLabsiOS
-          SIMULATOR_ID=$(xcodebuild -showdestinations \
-            -project RecordLabsiOS.xcodeproj \
-            -scheme RecordLabsiOS | \
-            sed -nE 's/.*platform:iOS Simulator,.*id: ([0-9A-F-]{36}),.*/\1/p' | head -n 1)
-          test -n "$SIMULATOR_ID"
-          echo "Using Xcode-eligible simulator: $SIMULATOR_ID"
           xcodebuild test \
             -project RecordLabsiOS.xcodeproj \
             -scheme RecordLabsiOS \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -destination 'platform=iOS Simulator,OS=latest' \
             CODE_SIGNING_ALLOWED=NO
 
   # ---------------------------------------------------------------------
