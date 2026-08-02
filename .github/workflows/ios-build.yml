@@ -28,10 +28,12 @@ jobs:
 
       - name: Run XCTest suite
         run: |
-          SIMULATOR_ID=$(xcrun simctl list devices available | sed -nE 's/.*\(([0-9A-F-]{36})\).*/\1/p' | head -n 1)
+          xcrun simctl list devices available
+          SIMULATOR_ID=$(xcrun simctl list devices available | sed -nE '/iPhone/ s/.*\(([0-9A-F-]{36})\).*/\1/p' | head -n 1)
           test -n "$SIMULATOR_ID"
+          echo "Using simulator: $SIMULATOR_ID"
           xcrun simctl boot "$SIMULATOR_ID" 2>/dev/null || true
-          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b || true
           xcodebuild test \
             -project RecordLabsiOS.xcodeproj \
             -scheme RecordLabsiOS \
