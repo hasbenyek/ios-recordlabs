@@ -66,6 +66,11 @@ enum LyricsMatcher {
         let titleSimilarity = similarity(cleanTitle(query.title).lowercased(), cleanTitle(candidate.title).lowercased())
         let artistSimilarity = similarity(cleanArtist(query.artist).lowercased(), cleanArtist(candidate.artist).lowercased())
 
+        // An exact title is not enough to identify a song: unrelated artists
+        // commonly share titles. Reject a clearly unrelated artist before
+        // applying the weighted score.
+        guard artistSimilarity >= 0.25 else { return 0 }
+
         var score = titleSimilarity * 0.6 + artistSimilarity * 0.4
 
         if let queryDuration = query.duration, queryDuration > 0,
@@ -74,7 +79,7 @@ enum LyricsMatcher {
             if delta <= 2 {
                 score += 0.1
             } else if delta > 10 {
-                score -= 0.3
+                return 0
             }
         }
 
