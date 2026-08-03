@@ -1,90 +1,216 @@
 import Foundation
+import os
 
-/// Best-effort parser for YouTube Music's `/search` AND `/browse` responses
-/// (both use the same `musicResponsiveListItemRenderer` shape for song rows,
-/// so `HomeScreen` reuses this too — see its doc comment for what that
-/// means for fidelity).
-///
-/// The real response is a deeply nested "renderer tree"
-/// (`SectionListRenderer` → `MusicShelfRenderer`/`MusicCardShelfRenderer` →
-/// `MusicResponsiveListItemRenderer`, etc) — the Android `innertube` module
-/// models this faithfully across dozens of files
-/// (`models/MusicResponsiveListItemRenderer.kt` and friends) with typed
-/// `isSong`/`isAlbum`/`isArtist`/`isPodcast` detection.
-///
-/// Reproducing that whole tree is out of scope for this pass, so this parser
-/// instead recursively scans the raw JSON for any
-/// `musicResponsiveListItemRenderer` object (the shape used for song rows in
-/// both quick picks and search results) and pulls out just enough fields to
-/// play something: title, a best-guess artist string, and the video id. It
-/// will misclassify or skip renderer shapes the real client distinguishes
-/// (albums, artists, playlists, podcast episodes) — treat results as
-/// "songs found", not a faithful reproduction of YouTube Music's UI.
+private let searchParserLog = Logger(subsystem: "com.recordlabs.music.ios", category: "SearchResponseParser")
+
+struct SearchParseDiagnostics: Equatable {
+    var topLevelKeys: [String] = []
+    var rendererNodesVisited = 0
+    var candidateSongRenderersFound = 0
+    var rejectedMissingVideoId = 0
+    var rejectedMissingTitle = 0
+    var rejectedMissingArtist = 0
+    var songsEmitted = 0
+    var finalErrorCategory: String?
+}
+
+/// Conservative parser for the renderer tree returned by YouTube Music.
+/// It emits only rows containing a real watchEndpoint videoId, title and artist.
 enum SearchResponseParser {
-    static func parseSongs(from data: Data) -> [Song] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        var results: [Song] = []
-        walk(root) { node in
-            guard
-                let renderer = node["musicResponsiveListItemRenderer"] as? [String: Any],
-                let videoId = extractVideoId(renderer),
-                let title = extractRuns(renderer, flexColumnIndex: 0).first
-            else { return }
+    struct ParseResult {
+        var songs: [Song]
+        /// Kept as strings for the existing UI/tests; `metrics` is the safe
+        /// structured form used by the runtime diagnostics panel.
+        var diagnostics: [String]
+        var metrics: SearchParseDiagnostics
+    }
 
-            let subtitleRuns = extractRuns(renderer, flexColumnIndex: 1)
-            let artistName = subtitleRuns.first { !$0.contains("•") && !isDurationLike($0) } ?? "Unknown Artist"
-
-            results.append(
-                Song(
-                    id: videoId,
-                    title: title,
-                    artists: [ArtistRef(id: artistName, name: artistName)],
-                    album: nil,
-                    duration: 0,
-                    thumbnailURL: extractThumbnail(renderer)
-                )
-            )
+    static func parseSongs(from data: Data) -> ParseResult {
+        guard let root = try? JSONSerialization.jsonObject(with: data) else {
+            let metrics = SearchParseDiagnostics(finalErrorCategory: "invalidJSON")
+            return ParseResult(songs: [], diagnostics: ["Response body was not valid JSON"], metrics: metrics)
         }
-        return results
+
+        var metrics = SearchParseDiagnostics()
+        if let rootDictionary = root as? [String: Any] {
+            metrics.topLevelKeys = rootDictionary.keys.sorted()
+        }
+
+        var songs: [Song] = []
+        var messages: [String] = []
+        var seenVideoIds = Set<String>()
+
+        walk(root) { node in
+            metrics.rendererNodesVisited += 1
+            guard let candidate = candidate(in: node) else { return }
+            metrics.candidateSongRenderersFound += 1
+
+            guard let videoId = extractVideoId(candidate.renderer) else {
+                metrics.rejectedMissingVideoId += 1
+                return
+            }
+            guard let title = extractTitle(candidate.renderer), !title.isEmpty else {
+                metrics.rejectedMissingTitle += 1
+                return
+            }
+            let subtitle = extractSubtitleParts(candidate.renderer)
+            guard let artist = subtitle.artist, !artist.isEmpty else {
+                metrics.rejectedMissingArtist += 1
+                return
+            }
+            guard seenVideoIds.insert(videoId).inserted else { return }
+
+            songs.append(Song(
+                id: videoId,
+                title: title,
+                artists: [ArtistRef(id: subtitle.artistId ?? artist, name: artist)],
+                album: subtitle.album.map { AlbumRef(id: subtitle.albumId ?? $0, title: $0) },
+                duration: subtitle.duration.flatMap(parseDuration) ?? 0,
+                thumbnailURL: extractThumbnail(candidate.renderer),
+                isExplicit: hasExplicitBadge(candidate.renderer)
+            ))
+        }
+
+        metrics.songsEmitted = songs.count
+        if metrics.candidateSongRenderersFound == 0 {
+            metrics.finalErrorCategory = "parserIncompatible"
+            messages.append("Search response received, but no supported song renderer was parsed.")
+        } else if songs.isEmpty {
+            metrics.finalErrorCategory = "noUsableSongs"
+        }
+        if metrics.rejectedMissingVideoId > 0 { messages.append("Rejected \(metrics.rejectedMissingVideoId) candidate(s) without videoId") }
+        if metrics.rejectedMissingTitle > 0 { messages.append("Rejected \(metrics.rejectedMissingTitle) candidate(s) without title") }
+        if metrics.rejectedMissingArtist > 0 { messages.append("Rejected \(metrics.rejectedMissingArtist) candidate(s) without artist") }
+        if !messages.isEmpty { searchParserLog.warning("\(messages.joined(separator: "; "), privacy: .public)") }
+        return ParseResult(songs: songs, diagnostics: messages, metrics: metrics)
+    }
+
+    private struct Candidate {
+        let renderer: [String: Any]
+    }
+
+    private static func candidate(in node: [String: Any]) -> Candidate? {
+        if let renderer = node["musicResponsiveListItemRenderer"] as? [String: Any] { return Candidate(renderer: renderer) }
+        if let renderer = node["musicTwoRowItemRenderer"] as? [String: Any] { return Candidate(renderer: renderer) }
+        return nil
     }
 
     private static func walk(_ node: Any, visit: ([String: Any]) -> Void) {
-        if let dict = node as? [String: Any] {
-            visit(dict)
-            for value in dict.values { walk(value, visit: visit) }
+        if let dictionary = node as? [String: Any] {
+            visit(dictionary)
+            for value in dictionary.values { walk(value, visit: visit) }
         } else if let array = node as? [Any] {
             for value in array { walk(value, visit: visit) }
         }
     }
 
     private static func extractVideoId(_ renderer: [String: Any]) -> String? {
-        (((renderer["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String)
+        if let endpointVideoId = findString(in: renderer, key: "videoId", under: "watchEndpoint") {
+            return endpointVideoId
+        }
+        // Android's parser also accepts playlistItemData.videoId for search
+        // rows whose play endpoint is carried by the row metadata/overlay.
+        if let playlistItemData = renderer["playlistItemData"] as? [String: Any],
+           let videoId = playlistItemData["videoId"] as? String,
+           !videoId.isEmpty {
+            return videoId
+        }
+        return nil
     }
 
-    private static func extractRuns(_ renderer: [String: Any], flexColumnIndex: Int) -> [String] {
-        guard
-            let flexColumns = renderer["flexColumns"] as? [[String: Any]],
-            flexColumnIndex < flexColumns.count,
-            let column = flexColumns[flexColumnIndex]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any],
-            let text = column["text"] as? [String: Any],
-            let runs = text["runs"] as? [[String: Any]]
-        else { return [] }
-        return runs.compactMap { $0["text"] as? String }
+    private static func extractTitle(_ renderer: [String: Any]) -> String? {
+        if let title = textValue(renderer["title"]) { return title }
+        if let flexColumns = renderer["flexColumns"] as? [[String: Any]],
+           let first = flexColumns.first,
+           let flex = first["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any] {
+            return textValue(flex["text"])
+        }
+        return nil
+    }
+
+    private static func extractSubtitleParts(_ renderer: [String: Any]) -> (artist: String?, artistId: String?, album: String?, albumId: String?, duration: String?) {
+        let textObject: Any?
+        if let flexColumns = renderer["flexColumns"] as? [[String: Any]], flexColumns.count > 1,
+           let flex = flexColumns[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any] {
+            textObject = flex["text"]
+        } else {
+            textObject = renderer["subtitle"]
+        }
+        guard let text = textObject as? [String: Any], let runs = text["runs"] as? [[String: Any]] else {
+            return (nil, nil, nil, nil, nil)
+        }
+
+        var segments: [[(String, String?)]] = [[]]
+        for run in runs {
+            guard let raw = run["text"] as? String else { continue }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty || ["•", "-", "–", "·"].contains(value) {
+                segments.append([])
+                continue
+            }
+            let browseId = ((run["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any])?["browseId"] as? String
+            segments[segments.count - 1].append((value, browseId))
+        }
+        segments.removeAll { $0.isEmpty }
+        var artist: String?
+        var artistId: String?
+        var album: String?
+        var albumId: String?
+        var duration: String?
+        for segment in segments {
+            let value = segment.map(\.0).joined(separator: " ")
+            if duration == nil, isDurationLike(value) { duration = value }
+            else if artist == nil { artist = value; artistId = segment.first?.1 }
+            else if album == nil { album = value; albumId = segment.first?.1 }
+        }
+        return (artist, artistId, album, albumId, duration)
+    }
+
+    private static func textValue(_ value: Any?) -> String? {
+        guard let object = value as? [String: Any] else { return nil }
+        if let simple = object["simpleText"] as? String { return simple }
+        if let runs = object["runs"] as? [[String: Any]] {
+            let text = runs.compactMap { $0["text"] as? String }.joined()
+            return text.isEmpty ? nil : text
+        }
+        return nil
+    }
+
+    private static func findString(in value: Any, key: String, under parentKey: String) -> String? {
+        if let object = value as? [String: Any] {
+            if let parent = object[parentKey] as? [String: Any], let found = parent[key] as? String, !found.isEmpty { return found }
+            for child in object.values { if let found = findString(in: child, key: key, under: parentKey) { return found } }
+        } else if let array = value as? [Any] {
+            for child in array { if let found = findString(in: child, key: key, under: parentKey) { return found } }
+        }
+        return nil
     }
 
     private static func isDurationLike(_ text: String) -> Bool {
-        text.allSatisfy { $0.isNumber || $0 == ":" }
+        text.range(of: #"^\d{1,2}:\d{2}(:\d{2})?$"#, options: .regularExpression) != nil
+    }
+
+    private static func parseDuration(_ text: String) -> TimeInterval? {
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        guard !parts.isEmpty else { return nil }
+        return TimeInterval(parts.reduce(0) { $0 * 60 + $1 })
+    }
+
+    private static func hasExplicitBadge(_ renderer: [String: Any]) -> Bool {
+        guard let badges = renderer["badges"] as? [[String: Any]] else { return false }
+        return badges.contains { badge in
+            guard let inline = badge["musicInlineBadgeRenderer"] as? [String: Any],
+                  let icon = inline["icon"] as? [String: Any],
+                  let type = icon["iconType"] as? String else { return false }
+            return type.contains("EXPLICIT")
+        }
     }
 
     private static func extractThumbnail(_ renderer: [String: Any]) -> URL? {
-        guard
-            let thumbnail = renderer["thumbnail"] as? [String: Any],
-            let musicThumbnailRenderer = thumbnail["musicThumbnailRenderer"] as? [String: Any],
-            let thumbnailObj = musicThumbnailRenderer["thumbnail"] as? [String: Any],
-            let thumbnails = thumbnailObj["thumbnails"] as? [[String: Any]],
-            let last = thumbnails.last,
-            let urlString = last["url"] as? String
-        else { return nil }
-        return URL(string: urlString)
+        var urls: [String] = []
+        walk(renderer) { node in
+            if let thumbnails = (node["thumbnails"] as? [[String: Any]])?.compactMap({ $0["url"] as? String }) { urls.append(contentsOf: thumbnails) }
+        }
+        return urls.last.flatMap(URL.init(string:))
     }
 }

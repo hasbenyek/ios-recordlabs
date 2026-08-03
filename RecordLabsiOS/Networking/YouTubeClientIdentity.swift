@@ -23,6 +23,7 @@ struct YouTubeClientIdentity {
     static let originYouTubeMusic = "https://music.youtube.com"
     static let refererYouTubeMusic = originYouTubeMusic + "/"
     static let apiURL = URL(string: originYouTubeMusic + "/youtubei/v1/")!
+    static let songSearchParams = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
 
     init(
         clientName: String,
@@ -51,7 +52,7 @@ struct YouTubeClientIdentity {
         clientName: "WEB_REMIX",
         clientVersion: "1.20260213.01.00",
         clientId: "67",
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
     )
 
     /// Per the Android app's own comment (`YTPlayerUtils.kt`): this client's
@@ -83,6 +84,20 @@ struct YouTubeClientIdentity {
         deviceModel: "Quest 3"
     )
 
+    /// Newer no-auth Android VR identity. The Android source keeps both VR
+    /// generations in its playback fallback list because YouTube can return
+    /// different stream shapes for each one.
+    static let androidVRCurrent = YouTubeClientIdentity(
+        clientName: "ANDROID_VR",
+        clientVersion: "1.61.48",
+        clientId: "28",
+        userAgent: "com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)",
+        osName: "Android",
+        osVersion: "12",
+        deviceMake: "Oculus",
+        deviceModel: "Quest 3"
+    )
+
     /// Embedded TV client — login-free, bypasses age-restriction for
     /// logged-out users. Also generally non-ciphered.
     static let tvEmbedded = YouTubeClientIdentity(
@@ -92,12 +107,50 @@ struct YouTubeClientIdentity {
         userAgent: "Mozilla/5.0 (PlayStation; PlayStation 4/12.02) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.4 Safari/605.1.15"
     )
 
-    /// Order matters: tried top-to-bottom until one yields a directly usable
-    /// (non-ciphered) audio format. Mirrors the *shape* of
-    /// `YTPlayerUtils.STREAM_FALLBACK_CLIENTS` on Android, restricted to the
-    /// subset that doesn't need signature/PoToken deciphering.
-    static let directURLFallbackOrder: [YouTubeClientIdentity] = [
-        .visionOS, .androidVR, .tvEmbedded,
+    /// The iPhone and iPad client identities are present in the Android
+    /// app's final playback fallbacks and do not require a PoToken here.
+    static let iOS = YouTubeClientIdentity(
+        clientName: "IOS",
+        clientVersion: "21.03.1",
+        clientId: "5",
+        userAgent: "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
+        osVersion: "18.2.22C152"
+    )
+
+    static let iPadOS = YouTubeClientIdentity(
+        clientName: "IOS",
+        clientVersion: "21.03.3",
+        clientId: "5",
+        userAgent: "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)",
+        osName: "iPadOS",
+        osVersion: "17.7.10.21H450",
+        deviceMake: "Apple",
+        deviceModel: "iPad7,6"
+    )
+
+    static let androidNoSDK = YouTubeClientIdentity(
+        clientName: "ANDROID",
+        clientVersion: "21.03.38",
+        clientId: "3",
+        userAgent: "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
+    )
+
+    static let androidMusic = YouTubeClientIdentity(
+        clientName: "ANDROID_MUSIC",
+        clientVersion: "7.02.51",
+        clientId: "21",
+        userAgent: "com.google.android.apps.youtube.music/7.02.51 (Linux; U; Android 14) Cronet/124.0.6367.82",
+        osName: "Android",
+        osVersion: "14",
+        usesSignatureTimestamp: true
+    )
+
+    /// Ordered, no-PoToken playback fallbacks mirrored from Android. A
+    /// response may use either a direct URL or a signature cipher; the
+    /// resolver handles both before proceeding to the next client.
+    static let playbackFallbackOrder: [YouTubeClientIdentity] = [
+        .visionOS, .androidVR, .androidVRCurrent, .tvEmbedded,
+        .androidMusic, .iOS, .iPadOS, .androidNoSDK, .androidMobile,
     ]
 
     /// The Android ("MOBILE") client — per `YouTubeClient.kt`, it needs a

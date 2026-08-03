@@ -26,6 +26,69 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Inspect Xcode and simulator destinations
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          xcodebuild -showdestinations \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS
+
+      - name: Boot first available iPhone simulator
+        id: simulator
+        run: |
+          XCODE_DESTINATIONS=$(xcodebuild -showdestinations \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS)
+
+          DEVICE_INFO=$(xcrun simctl list devices available | perl -ne '
+            if (/^-- (.+?) --$/) { $runtime = $1; next; }
+            if (/^\s*(iPhone[^()]*)\s+\(([0-9A-Fa-f-]{36})\)\s+\((Booted|Shutdown)\)/) {
+              print "$1|$2|$3|$runtime\n";
+            }
+          ')
+
+          SIMULATOR_NAME=''
+          SIMULATOR_ID=''
+          SIMULATOR_STATE=''
+          SIMULATOR_RUNTIME=''
+          while IFS='|' read -r CANDIDATE_NAME CANDIDATE_ID CANDIDATE_STATE CANDIDATE_RUNTIME; do
+            if echo "$XCODE_DESTINATIONS" | grep -Fq "$CANDIDATE_ID"; then
+              SIMULATOR_NAME="$CANDIDATE_NAME"
+              SIMULATOR_ID="$CANDIDATE_ID"
+              SIMULATOR_STATE="$CANDIDATE_STATE"
+              SIMULATOR_RUNTIME="$CANDIDATE_RUNTIME"
+              break
+            fi
+          done <<< "$DEVICE_INFO"
+
+          SIMULATOR_NAME=$(echo "$SIMULATOR_NAME" | sed 's/[[:space:]]*$//')
+          test -n "$SIMULATOR_ID"
+          test -n "$SIMULATOR_RUNTIME"
+
+          echo "Selected simulator: $SIMULATOR_NAME"
+          echo "Selected runtime: $SIMULATOR_RUNTIME"
+          echo "Selected UDID: $SIMULATOR_ID"
+
+          if [ "$SIMULATOR_STATE" != "Booted" ]; then
+            xcrun simctl boot "$SIMULATOR_ID"
+          fi
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          echo "udid=$SIMULATOR_ID" >> "$GITHUB_OUTPUT"
+          echo "name=$SIMULATOR_NAME" >> "$GITHUB_OUTPUT"
+          echo "runtime=$SIMULATOR_RUNTIME" >> "$GITHUB_OUTPUT"
+
+      - name: Run XCTest suite
+        run: |
+          xcodebuild test \
+            -project RecordLabsiOS.xcodeproj \
+            -scheme RecordLabsiOS \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -destination-timeout 180 \
+            CODE_SIGNING_ALLOWED=NO
+
   # ---------------------------------------------------------------------
   # The `secrets` context isn't allowed directly in a job-level `if:`
   # (GitHub only permits `github, needs, vars, inputs` there — using

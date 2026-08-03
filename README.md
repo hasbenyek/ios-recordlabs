@@ -18,12 +18,12 @@ generation — is explained in `Networking/Cipher/CipherDeobfuscator.swift`.
 
 | Piece | Status |
 |---|---|
-| 4-tab navigation, mini/full player UI | Fully working SwiftUI, real state management |
-| `Search` tab | **Real network calls** to `music.youtube.com/youtubei/v1/search`, same request headers/context as the Android `innertube` module |
-| `Home` tab | **Real network call** to `/browse` (`FEmusic_home`); falls back to sample data (labeled) if the request fails |
-| Song playback | **Real `AVPlayer` streaming**, including **real signature-cipher deciphering** — see below |
+| 4-tab navigation, mini/full player UI | Fully working SwiftUI, real state management, styled to match the Android app's Material You look (`Resources/Theme.swift` uses the same `0xFF2D55` seed color as `ui/theme/Theme.kt`'s `DefaultThemeColor`) |
+| `Search` tab | **Real network calls** to `music.youtube.com/youtubei/v1/search`, same request headers/context as the Android `innertube` module; results show real artwork (`ArtworkView`) |
+| `Home` tab | **Real network call** to `/browse` (`FEmusic_home`), rendered as horizontally-scrolling artwork-card sections ("Quick Picks", plus a "Recently Played" section sourced from this device's own real playback history) rather than a flat text list; falls back to sample data (labeled) if the request fails. Still not a faithful port of Android's many independent home sections (QuickPicks/DailyDiscover/KeepListening/ForgottenFavorites/AccountPlaylists/FromTheCommunity/MoodAndGenres) — see `HomeScreen.swift`'s doc comment for why |
+| Song playback | **Real `AVPlayer` streaming**, including **real signature-cipher deciphering** — see below. Full player has a blurred-artwork background, shuffle/repeat controls, and elapsed/remaining time, closer to Android's `Player.kt` (still no real palette-based background color extraction) |
 | `Listen Together` | **Real peer-to-peer sync** via Apple's MultipeerConnectivity — works between nearby devices, not over the internet (see below) |
-| `Library` tab | Still `SampleData.swift` mock content — full library browsing needs the same renderer-tree parsing work as `Home`/`Search`, just not pointed at a `browse` call yet |
+| `Library` tab | Still `SampleData.swift` mock content, but now laid out like Android's real Library screens (Songs list / Albums grid / Artists grid / Playlists list with real artwork where available) rather than plain text rows — full library browsing needs both the same renderer-tree parsing work as `Home`/`Search` and a real persistence layer (no SwiftData/Core Data yet) |
 | Downloads, lyrics, equalizer, Discord RPC, login | Not started |
 
 ### Signature-cipher deciphering: a real port, with one deliberate gap

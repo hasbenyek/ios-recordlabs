@@ -1,52 +1,31 @@
 import SwiftUI
 
-/// Placeholder for `library/` (Songs/Albums/Artists/Playlists/Podcasts/Mix
-/// tabs). Collapsed into a single segmented view here as a starting point.
+/// Library has no real backing store yet (no persistence layer — see
+/// README "known limitations"). Rather than show fabricated content, this
+/// screen says so explicitly until real persistence is added.
 struct LibraryScreen: View {
-    @EnvironmentObject private var playerConnection: PlayerConnection
-    @State private var section: Section = .playlists
+    @State private var section: LibrarySection = .playlists
 
-    enum Section: String, CaseIterable, Identifiable {
+    enum LibrarySection: String, CaseIterable, Identifiable {
         case songs = "Songs", albums = "Albums", artists = "Artists", playlists = "Playlists"
         var id: String { rawValue }
     }
 
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 Picker("Section", selection: $section) {
-                    ForEach(Section.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(LibrarySection.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+                .padding(.vertical, 8)
 
-                List {
-                    switch section {
-                    case .songs:
-                        ForEach(SampleData.songs) { song in
-                            SongRow(song: song) {
-                                playerConnection.playQueue(SampleData.songs, startIndex: SampleData.songs.firstIndex(of: song) ?? 0)
-                            }
-                        }
-                    case .albums:
-                        ForEach(SampleData.albums) { album in
-                            Text(album.title)
-                        }
-                    case .artists:
-                        ForEach(SampleData.artists) { artist in
-                            Text(artist.name)
-                        }
-                    case .playlists:
-                        ForEach(SampleData.playlists) { playlist in
-                            HStack {
-                                Text(playlist.name)
-                                Spacer()
-                                Text("\(playlist.songCount)").foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
+                EmptyStateView(
+                    title: "Library persistence is not implemented yet",
+                    systemImage: "tray",
+                    message: "Liked songs, saved albums/artists, and playlists need a local database (SwiftData/GRDB), which hasn't been built for iOS yet. This tab intentionally shows nothing rather than sample content."
+                )
             }
             .navigationTitle("Library")
         }
@@ -55,5 +34,5 @@ struct LibraryScreen: View {
 }
 
 #Preview {
-    LibraryScreen().environmentObject(PlayerConnection())
+    LibraryScreen()
 }

@@ -21,7 +21,5 @@ struct QueueView: View {
 }
 
 #Preview {
-    let connection = PlayerConnection()
-    connection.playQueue(SampleData.songs)
-    return QueueView().environmentObject(connection)
+    QueueView().environmentObject(PlayerConnection())
 }

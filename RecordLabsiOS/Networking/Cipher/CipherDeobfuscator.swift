@@ -118,6 +118,17 @@ actor CipherDeobfuscator {
     }
 
     private static func parseQueryParams(_ query: String) -> [String: String] {
+        if let components = URLComponents(string: "https://dummy.invalid/?" + query), let items = components.queryItems {
+            var result: [String: String] = [:]
+            for item in items {
+                if let val = item.value {
+                    result[item.name] = val
+                }
+            }
+            if result["url"] != nil {
+                return result
+            }
+        }
         var result: [String: String] = [:]
         for pair in query.split(separator: "&") {
             guard let eqIndex = pair.firstIndex(of: "=") else { continue }

@@ -15,6 +15,9 @@ targets:
       - path: RecordLabsiOS
         excludes:
           - "Info.plist"
+          - "LaunchScreen.storyboard"
+      - path: RecordLabsiOS/LaunchScreen.storyboard
+        buildPhase: resources
     info:
       path: RecordLabsiOS/Info.plist
     settings:
@@ -24,7 +27,10 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UILaunchStoryboardName: "LaunchScreen"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # No signing team is set here on purpose — this repo has none to
         # commit. Building for the Simulator needs no signing at all. To
@@ -33,3 +39,29 @@ targets:
         # generated project, or via CODE_SIGN_STYLE/DEVELOPMENT_TEAM
         # overrides in CI (see .github/workflows/ios-build.yml).
         CODE_SIGN_STYLE: Automatic
+  RecordLabsiOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: RecordLabsiOSTests
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: RecordLabsiOS
+schemes:
+  RecordLabsiOS:
+    build:
+      targets:
+        RecordLabsiOS: all
+        RecordLabsiOSTests: [test]
+    test:
+      config: Debug
+      targets:
+        - RecordLabsiOSTests
+    run:
+      config: Debug
+    archive:
+      config: Release

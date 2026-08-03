@@ -1,64 +1,136 @@
 import SwiftUI
 
-/// Real network call to YouTube Music's `/browse` (`browseId: FEmusic_home`)
-/// via `SearchResponseParser`'s heuristic scan — same caveats as Search (see
-/// that file's doc comment): this reads whatever songs it can find in the
-/// raw JSON, not a faithful reproduction of the actual home feed's shelves/
-/// sections/ordering the way Android's `HomeScreen.kt` renders them. Falls
-/// back to `SampleData` if the request fails, labeled as such, rather than
-/// showing a dead screen.
+/// Real `/browse` (`FEmusic_home`) call, rendered as a "Quick Picks" section
+/// plus a "Recently Played" section sourced from this device's own actual
+/// playback history (`PlayerConnection.recentlyPlayed`). No sample-data
+/// fallback of any kind — a failed or empty load shows a real error/empty
+/// state with Retry, per the "never fake a success state" rule.
+///
+/// Still not a faithful port of Android's many independent home sections
+/// (QuickPicks/DailyDiscover/KeepListening/ForgottenFavorites/
+/// AccountPlaylists/FromTheCommunity/MoodAndGenres) — see
+/// `SearchResponseParser`'s doc comment for why.
 struct HomeScreen: View {
     @EnvironmentObject private var playerConnection: PlayerConnection
-    @State private var songs: [Song] = []
-    @State private var isLoading = true
-    @State private var usingFallbackData = false
+    @StateObject private var diagnosticsCenter = SearchDiagnosticsCenter.shared
+    @State private var state: LoadState<[Song]> = .idle
+    @State private var showDiagnostics = false
+
+    private let cardSize: CGFloat = 140
 
     var body: some View {
         NavigationView {
-            List {
-                if usingFallbackData {
-                    Section {
-                        Label("Couldn't load your feed — showing sample songs instead.", systemImage: "wifi.exclamationmark")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Quick picks") {
-                    ForEach(songs) { song in
-                        SongRow(song: song) {
-                            playerConnection.playQueue(songs, startIndex: songs.firstIndex(of: song) ?? 0)
+            content
+                .navigationTitle("Home")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button { showDiagnostics = true } label: {
+                            Label("Diagnostics", systemImage: "stethoscope")
                         }
                     }
                 }
-            }
-            .overlay {
-                if isLoading { ProgressView() }
-            }
-            .navigationTitle("Home")
-            .task { await loadHome() }
-            .refreshable { await loadHome() }
+                .task { await loadHome() }
+                .refreshable { await loadHome() }
         }
         .navigationViewStyle(.stack)
+        .sheet(isPresented: $showDiagnostics) {
+            SearchDiagnosticsView(report: diagnosticsCenter.latest)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .idle, .loading:
+            ScrollView {
+                if !playerConnection.recentlyPlayed.isEmpty {
+                    section(title: "Recently Played", songs: playerConnection.recentlyPlayed)
+                }
+            }
+            .overlay { ProgressView() }
+        case .error(let error):
+            ErrorStateView(title: "Couldn't load your feed", message: error.message) {
+                Task { await loadHome() }
+            }
+        case .empty:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    if !playerConnection.recentlyPlayed.isEmpty {
+                        section(title: "Recently Played", songs: playerConnection.recentlyPlayed)
+                    }
+                    EmptyStateView(
+                        title: "Nothing to show",
+                        systemImage: "house",
+                        message: "YouTube Music didn't return any recognizable songs for your home feed right now."
+                    )
+                    .frame(height: 240)
+                }
+                .padding(.vertical, 12)
+            }
+        case .loaded(let songs):
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    if !playerConnection.recentlyPlayed.isEmpty {
+                        section(title: "Recently Played", songs: playerConnection.recentlyPlayed)
+                    }
+                    section(title: "Quick Picks", songs: songs)
+                }
+                .padding(.vertical, 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func section(title: String, songs: [Song]) -> some View {
+        if !songs.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.title3.bold())
+                    .padding(.horizontal)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 14) {
+                        ForEach(songs) { song in
+                            Button {
+                                playerConnection.playQueue(songs, startIndex: songs.firstIndex(of: song) ?? 0)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ArtworkView(url: song.thumbnailURL, cornerRadius: 10)
+                                        .frame(width: cardSize, height: cardSize)
+
+                                    Text(song.title)
+                                        .font(.subheadline)
+                                        .lineLimit(1)
+                                        .foregroundStyle(.primary)
+                                    Text(song.artistNames)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: cardSize)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
     }
 
     private func loadHome() async {
-        isLoading = songs.isEmpty
+        state = .loading
         do {
             let data = try await InnerTubeClient.shared.browse(browseId: "FEmusic_home")
             let parsed = SearchResponseParser.parseSongs(from: data)
-            if parsed.isEmpty {
-                songs = SampleData.songs
-                usingFallbackData = true
+            if parsed.songs.isEmpty {
+                state = .error(.parsing(parsed.diagnostics.first ?? "Home response received, but no supported song renderer was parsed."))
             } else {
-                songs = parsed
-                usingFallbackData = false
+                state = .loaded(parsed.songs)
             }
         } catch {
-            songs = SampleData.songs
-            usingFallbackData = true
+            state = .error(.network(error.localizedDescription))
         }
-        isLoading = false
     }
 }
 
