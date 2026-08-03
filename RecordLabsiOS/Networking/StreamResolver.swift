@@ -19,102 +19,57 @@ import Foundation
 enum StreamResolver {
     static func resolveStreamURL(
         videoId: String,
-        client: StreamResolverClient = InnerTubeClient.shared
+        client: StreamResolverClient = InnerTubeClient.shared,
+        signatureTimestampProvider: @escaping @Sendable () async -> Int? = {
+            await CipherDeobfuscator.shared.signatureTimestamp()
+        }
     ) async throws -> ResolvedStream {
         var attemptedClients: [String] = []
         var formatsSeen: Set<String> = []
+        var lastCipherError: PlayerError?
 
-        for identity in YouTubeClientIdentity.directURLFallbackOrder {
+        for identity in YouTubeClientIdentity.playbackFallbackOrder {
             try Task.checkCancellation()
             attemptedClients.append(identity.clientName)
             do {
-                if let resolved = try await resolveDirect(videoId: videoId, identity: identity, client: client, attempted: attemptedClients, formatsSeen: &formatsSeen) {
+                if let resolved = try await resolveFromClient(videoId: videoId, identity: identity, client: client, attempted: attemptedClients, formatsSeen: &formatsSeen, signatureTimestampProvider: signatureTimestampProvider) {
                     return resolved
                 }
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let error as PlayerError {
+                if case .cipherFailure = error { lastCipherError = error }
             } catch {
-                // Keep the fallback chain alive for HTTP, decoding, and
-                // other client-specific failures, not only URLError.
-                if attemptedClients.count == YouTubeClientIdentity.directURLFallbackOrder.count,
-                   let urlError = error as? URLError {
-                    throw PlayerError.network(urlError.localizedDescription)
-                }
+                // A client-specific HTTP/decode failure must not prevent a
+                // later client from supplying a playable stream.
                 continue
             }
-        }
-
-        attemptedClients.append(YouTubeClientIdentity.androidMobile.clientName)
-        try Task.checkCancellation()
-        if let resolved = try await resolveViaCipher(videoId: videoId, client: client, attempted: attemptedClients, formatsSeen: &formatsSeen) {
-            return resolved
         }
 
         if formatsSeen.isEmpty {
             throw PlayerError.streamResolutionFailure("No audio formats were returned by any client")
         }
+        if let lastCipherError { throw lastCipherError }
+        if formatsSeen.contains(where: { $0.hasPrefix("audio/mp4") }) {
+            throw PlayerError.streamResolutionFailure("AAC/MP4 was returned, but none of the attempted clients supplied a usable stream URL or cipher")
+        }
         throw PlayerError.unsupportedFormat(availableFormats: Array(formatsSeen).sorted())
     }
 
-    private static func resolveDirect(
+    private static func resolveFromClient(
         videoId: String,
         identity: YouTubeClientIdentity,
         client: StreamResolverClient,
         attempted: [String],
-        formatsSeen: inout Set<String>
+        formatsSeen: inout Set<String>,
+        signatureTimestampProvider: @escaping @Sendable () async -> Int?
     ) async throws -> ResolvedStream? {
-        let data = try await client.player(videoId: videoId, identity: identity, signatureTimestamp: nil)
+        let signatureTimestamp = identity.usesSignatureTimestamp
+            ? await signatureTimestampProvider()
+            : nil
+        let data = try await client.player(videoId: videoId, identity: identity, signatureTimestamp: signatureTimestamp)
         let response = try JSONDecoder().decode(PlayerResponse.self, from: data)
         guard response.playabilityStatus.status == "OK" else { return nil }
-
-        let allAudio = response.streamingData?.adaptiveFormats ?? []
-        formatsSeen.formUnion(AudioFormatSelector.describeAudioFormats(allAudio))
-
-        guard let best = AudioFormatSelector.selectBest(from: allAudio.filter { $0.url != nil && $0.streamCipher == nil }),
-              let urlString = best.url, let url = URL(string: urlString) else {
-            return nil
-        }
-
-        return ResolvedStream(
-            url: url,
-            diagnostics: StreamDiagnostics(
-                selectedClient: identity.clientName,
-                pathType: .direct,
-                mimeType: best.container,
-                codec: best.codec ?? "unknown",
-                bitrateKbps: best.bitrate / 1000,
-                expiresInSeconds: response.streamingData?.expiresInSeconds.flatMap(Int.init),
-                fallbackClientsAttempted: attempted,
-                finalErrorCategory: nil
-            )
-        )
-    }
-
-    private static func resolveViaCipher(
-        videoId: String,
-        client: StreamResolverClient,
-        attempted: [String],
-        formatsSeen: inout Set<String>
-    ) async throws -> ResolvedStream? {
-        let identity = YouTubeClientIdentity.androidMobile
-        let signatureTimestamp = await CipherDeobfuscator.shared.signatureTimestamp()
-
-        let data: Data
-        do {
-            data = try await client.player(videoId: videoId, identity: identity, signatureTimestamp: signatureTimestamp)
-        } catch {
-            throw PlayerError.network(error.localizedDescription)
-        }
-
-        let response: PlayerResponse
-        do {
-            response = try JSONDecoder().decode(PlayerResponse.self, from: data)
-        } catch {
-            throw PlayerError.streamResolutionFailure("Couldn't parse the player response: \(error.localizedDescription)")
-        }
-        guard response.playabilityStatus.status == "OK" else {
-            throw PlayerError.streamResolutionFailure("YouTube reported this video isn't playable (\(response.playabilityStatus.status))")
-        }
 
         let allAudio = response.streamingData?.adaptiveFormats ?? []
         formatsSeen.formUnion(AudioFormatSelector.describeAudioFormats(allAudio))

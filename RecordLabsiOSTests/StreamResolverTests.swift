@@ -7,7 +7,7 @@ final class StreamResolverTests: XCTestCase {
             identity.clientName == "VISIONOS" ? Self.response(mimeType: "audio/webm; codecs=\"opus\"") : Self.response(mimeType: "audio/mp4; codecs=\"mp4a.40.2\"")
         }
 
-        let resolved = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client)
+        let resolved = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client, signatureTimestampProvider: { nil })
 
         XCTAssertEqual(resolved.diagnostics.selectedClient, "ANDROID_VR")
     }
@@ -17,7 +17,7 @@ final class StreamResolverTests: XCTestCase {
             identity.clientName == "VISIONOS" ? Data("bad json".utf8) : Self.response(mimeType: "audio/mp4; codecs=\"mp4a.40.2\"")
         }
 
-        let resolved = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client)
+        let resolved = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client, signatureTimestampProvider: { nil })
 
         XCTAssertEqual(resolved.diagnostics.selectedClient, "ANDROID_VR")
     }
@@ -26,13 +26,26 @@ final class StreamResolverTests: XCTestCase {
         let client = MockStreamResolverClient { _ in Data("bad json".utf8) }
 
         do {
-            _ = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client)
+            _ = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client, signatureTimestampProvider: { nil })
             XCTFail("Expected resolution failure")
         } catch let error as PlayerError {
             guard case .streamResolutionFailure = error else { XCTFail("Unexpected PlayerError: \(error)"); return }
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testIOSFallbackIsTriedAfterEarlierClientsFail() async throws {
+        let client = MockStreamResolverClient { identity in
+            identity.clientName == "IOS"
+                ? Self.response(mimeType: "audio/mp4; codecs=\"mp4a.40.2\"")
+                : Self.response(mimeType: "audio/webm; codecs=\"opus\"")
+        }
+
+        let resolved = try await StreamResolver.resolveStreamURL(videoId: "v1", client: client, signatureTimestampProvider: { nil })
+
+        XCTAssertEqual(resolved.diagnostics.selectedClient, "IOS")
+        XCTAssertEqual(resolved.diagnostics.pathType, .direct)
     }
 
     private static func response(mimeType: String) -> Data {
