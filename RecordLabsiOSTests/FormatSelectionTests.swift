@@ -70,6 +70,15 @@ final class FormatSelectionTests: XCTestCase {
         XCTAssertEqual(AudioFormatSelector.selectBest(from: [aac])?.itag, 140)
     }
 
+    func testLegacyCipherAliasIsDecodedAsAStreamCipher() throws {
+        let json = """
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"adaptiveFormats":[{"itag":140,"cipher":"url=https%3A%2F%2Fexample.invalid%2Faudio%26s%3Dabc%26sp%3Dsig","mimeType":"audio/mp4 mp4a.40.2","bitrate":128000}]}}
+        """
+
+        let response = try JSONDecoder().decode(PlayerResponse.self, from: Data(json.utf8))
+        XCTAssertNotNil(response.streamingData?.adaptiveFormats.first?.streamCipher)
+    }
+
     func testMalformedMimeTypeIsRejectedSafely() {
         let malformed = format(itag: 999, mimeType: "not-a-real-mime-type", bitrate: 999_000, audioQuality: "AUDIO_QUALITY_HIGH")
         let aac = format(itag: 140, mimeType: #"audio/mp4; codecs="mp4a.40.2""#, bitrate: 128_000, audioQuality: "AUDIO_QUALITY_MEDIUM")

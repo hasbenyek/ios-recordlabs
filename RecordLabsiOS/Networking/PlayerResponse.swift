@@ -25,6 +25,13 @@ struct PlayerResponse: Decodable {
             /// Present when YouTube requires deciphering the stream URL via
             /// obfuscated player JS.
             var signatureCipher: String?
+            /// Some Innertube client responses use this legacy alias instead
+            /// of `signatureCipher`. Android accepts either field.
+            var cipher: String? = nil
+
+            var streamCipher: String? {
+                signatureCipher ?? cipher
+            }
 
             /// `"audio/mp4"` / `"audio/webm"` — the part of `mimeType`
             /// before the `codecs=` parameter.

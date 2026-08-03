@@ -70,7 +70,7 @@ enum StreamResolver {
         let allAudio = response.streamingData?.adaptiveFormats ?? []
         formatsSeen.formUnion(AudioFormatSelector.describeAudioFormats(allAudio))
 
-        guard let best = AudioFormatSelector.selectBest(from: allAudio.filter { $0.url != nil && $0.signatureCipher == nil }),
+        guard let best = AudioFormatSelector.selectBest(from: allAudio.filter { $0.url != nil && $0.streamCipher == nil }),
               let urlString = best.url, let url = URL(string: urlString) else {
             return nil
         }
@@ -126,7 +126,7 @@ enum StreamResolver {
         let resolvedURL: URL
         if let urlString = best.url, let url = URL(string: urlString) {
             resolvedURL = await CipherDeobfuscator.shared.transformNParam(in: url)
-        } else if let cipher = best.signatureCipher {
+        } else if let cipher = best.streamCipher {
             let url: URL
             do {
                 url = try await CipherDeobfuscator.shared.deobfuscateStreamURL(signatureCipher: cipher)
@@ -142,7 +142,7 @@ enum StreamResolver {
             url: resolvedURL,
             diagnostics: StreamDiagnostics(
                 selectedClient: identity.clientName,
-                pathType: best.signatureCipher != nil ? .cipher : .direct,
+                pathType: best.streamCipher != nil ? .cipher : .direct,
                 mimeType: best.container,
                 codec: best.codec ?? "unknown",
                 bitrateKbps: best.bitrate / 1000,
