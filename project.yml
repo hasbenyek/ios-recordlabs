@@ -16,8 +16,8 @@ targets:
         excludes:
           - "Info.plist"
           - "LaunchScreen.storyboard"
-    resources:
       - path: RecordLabsiOS/LaunchScreen.storyboard
+        buildPhase: resources
     info:
       path: RecordLabsiOS/Info.plist
     settings:
