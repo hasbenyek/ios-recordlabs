@@ -47,6 +47,18 @@ final class FormatSelectionTests: XCTestCase {
         XCTAssertFalse(AudioFormatSelector.describeAudioFormats([video, aac]).contains { $0.hasPrefix("video/") })
     }
 
+    func testAACRemainsAudioWhenResponseIncludesWidthField() {
+        let aac = format(
+            itag: 140,
+            mimeType: #"audio/mp4; codecs="mp4a.40.2""#,
+            bitrate: 128_000,
+            audioQuality: "AUDIO_QUALITY_MEDIUM",
+            width: 0
+        )
+
+        XCTAssertEqual(AudioFormatSelector.selectBest(from: [aac])?.itag, 140)
+    }
+
     func testMalformedMimeTypeIsRejectedSafely() {
         let malformed = format(itag: 999, mimeType: "not-a-real-mime-type", bitrate: 999_000, audioQuality: "AUDIO_QUALITY_HIGH")
         let aac = format(itag: 140, mimeType: #"audio/mp4; codecs="mp4a.40.2""#, bitrate: 128_000, audioQuality: "AUDIO_QUALITY_MEDIUM")

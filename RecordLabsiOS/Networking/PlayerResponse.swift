@@ -41,7 +41,10 @@ struct PlayerResponse: Decodable {
             }
 
             var isAudioOnly: Bool {
-                mimeType.hasPrefix("audio/") && width == nil
+                // YouTube may include a non-nil/zero width field even on
+                // adaptive audio formats. Android treats an audio MIME type
+                // as audio regardless of that optional field.
+                mimeType.lowercased().hasPrefix("audio/") || width == nil
             }
 
             /// `AVPlayer`/AVFoundation does not decode WebM containers or
@@ -53,7 +56,7 @@ struct PlayerResponse: Decodable {
             /// reject WebM/Opus rather than picking "whatever has the
             /// highest bitrate".
             var isAACCompatible: Bool {
-                container == "audio/mp4" && (codec?.hasPrefix("mp4a") ?? false)
+                container.lowercased() == "audio/mp4" && (codec?.lowercased().hasPrefix("mp4a") ?? false)
             }
         }
 
