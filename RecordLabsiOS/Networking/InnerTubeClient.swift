@@ -33,9 +33,14 @@ actor InnerTubeClient: StreamResolverClient, SearchRequesting {
         identity: YouTubeClientIdentity,
         body: Encodable
     ) async throws -> SearchHTTPResponse {
-        var request = URLRequest(url: YouTubeClientIdentity.apiURL.appendingPathComponent(path))
+        var components = URLComponents(url: YouTubeClientIdentity.apiURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "prettyPrint", value: "false")]
+        var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
         request.setValue(identity.clientId, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(identity.clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
@@ -68,7 +73,7 @@ actor InnerTubeClient: StreamResolverClient, SearchRequesting {
         let body = SearchRequestBody(
             context: InnerTubeContext(identity: identity, locale: locale, visitorData: visitorData),
             query: query,
-            params: nil
+            params: YouTubeClientIdentity.songSearchParams
         )
         return try await request(path: "search", identity: identity, body: body)
     }
@@ -77,7 +82,7 @@ actor InnerTubeClient: StreamResolverClient, SearchRequesting {
         let body = SearchRequestBody(
             context: InnerTubeContext(identity: identity, locale: locale, visitorData: visitorData),
             query: query,
-            params: nil
+            params: YouTubeClientIdentity.songSearchParams
         )
         return try await requestResponse(path: "search", identity: identity, body: body)
     }
@@ -85,10 +90,15 @@ actor InnerTubeClient: StreamResolverClient, SearchRequesting {
     /// `browseId: "FEmusic_home"` is YouTube Music's own id for the signed-out
     /// home feed (quick picks / recent activity) — the same one the Android
     /// app's `HomeScreen.kt` requests via `YouTube.browse` at startup.
-    func browse(browseId: String, identity: YouTubeClientIdentity = .webRemix) async throws -> Data {
+    func browse(
+        browseId: String,
+        params: String? = nil,
+        identity: YouTubeClientIdentity = .webRemix
+    ) async throws -> Data {
         let body = BrowseRequestBody(
             context: InnerTubeContext(identity: identity, locale: locale, visitorData: visitorData),
-            browseId: browseId
+            browseId: browseId,
+            params: params
         )
         return try await request(path: "browse", identity: identity, body: body)
     }

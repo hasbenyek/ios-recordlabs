@@ -28,6 +28,8 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UILaunchStoryboardName: "LaunchScreen"
+        INFOPLIST_KEY_LSRequiresIPhoneOS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # No signing team is set here on purpose — this repo has none to
         # commit. Building for the Simulator needs no signing at all. To

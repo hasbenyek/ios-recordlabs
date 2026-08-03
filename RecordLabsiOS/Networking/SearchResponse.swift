@@ -105,7 +105,17 @@ enum SearchResponseParser {
     }
 
     private static func extractVideoId(_ renderer: [String: Any]) -> String? {
-        findString(in: renderer, key: "videoId", under: "watchEndpoint")
+        if let endpointVideoId = findString(in: renderer, key: "videoId", under: "watchEndpoint") {
+            return endpointVideoId
+        }
+        // Android's parser also accepts playlistItemData.videoId for search
+        // rows whose play endpoint is carried by the row metadata/overlay.
+        if let playlistItemData = renderer["playlistItemData"] as? [String: Any],
+           let videoId = playlistItemData["videoId"] as? String,
+           !videoId.isEmpty {
+            return videoId
+        }
+        return nil
     }
 
     private static func extractTitle(_ renderer: [String: Any]) -> String? {

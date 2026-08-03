@@ -23,6 +23,7 @@ struct YouTubeClientIdentity {
     static let originYouTubeMusic = "https://music.youtube.com"
     static let refererYouTubeMusic = originYouTubeMusic + "/"
     static let apiURL = URL(string: originYouTubeMusic + "/youtubei/v1/")!
+    static let songSearchParams = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
 
     init(
         clientName: String,
@@ -51,7 +52,7 @@ struct YouTubeClientIdentity {
         clientName: "WEB_REMIX",
         clientVersion: "1.20260213.01.00",
         clientId: "67",
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
     )
 
     /// Per the Android app's own comment (`YTPlayerUtils.kt`): this client's

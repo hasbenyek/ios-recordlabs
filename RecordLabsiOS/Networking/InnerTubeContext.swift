@@ -15,7 +15,19 @@ struct InnerTubeContext: Encodable {
         var visitorData: String?
     }
 
+    struct Request: Encodable {
+        var internalExperimentFlags: [String] = []
+        var useSsl = true
+    }
+
+    struct User: Encodable {
+        var lockedSafetyMode = false
+        var onBehalfOfUser: String?
+    }
+
     var client: Client
+    var request = Request()
+    var user = User(onBehalfOfUser: nil)
 
     init(identity: YouTubeClientIdentity, locale: YouTubeLocale, visitorData: String?) {
         client = Client(
@@ -57,6 +69,7 @@ struct SearchRequestBody: Encodable {
 struct BrowseRequestBody: Encodable {
     var context: InnerTubeContext
     var browseId: String?
+    var params: String?
 }
 
 struct PlayerRequestBody: Encodable {
