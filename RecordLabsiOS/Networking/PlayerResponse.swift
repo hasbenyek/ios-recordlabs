@@ -34,10 +34,21 @@ struct PlayerResponse: Decodable {
 
             /// The `codecs="..."` value, e.g. `"mp4a.40.2"` or `"opus"`.
             var codec: String? {
-                guard let range = mimeType.range(of: #"codecs="([^"]+)""#, options: .regularExpression) else { return nil }
-                let match = mimeType[range]
-                guard let inner = match.range(of: #"(?<=")[^"]+(?=")"#, options: .regularExpression) else { return nil }
-                return String(match[inner])
+                if let range = mimeType.range(of: #"codecs\s*=\s*"([^"]+)""#, options: .regularExpression) {
+                    let match = mimeType[range]
+                    if let inner = match.range(of: #"(?<=")[^"]+(?=")"#, options: .regularExpression) {
+                        return String(match[inner])
+                    }
+                }
+
+                // Some InnerTube responses omit the codecs= parameter and
+                // append the codec as a plain token, e.g. "audio/mp4 mp4a.40.2".
+                // Keep this fallback strict: only an explicit mp4a token is accepted.
+                return mimeType
+                    .split { $0 == ";" || $0 == "," || $0.isWhitespace }
+                    .dropFirst()
+                    .first { $0.lowercased().hasPrefix("mp4a.") }
+                    .map(String.init)
             }
 
             var isAudioOnly: Bool {

@@ -59,6 +59,17 @@ final class FormatSelectionTests: XCTestCase {
         XCTAssertEqual(AudioFormatSelector.selectBest(from: [aac])?.itag, 140)
     }
 
+    func testPlainAACTokenInMIMEIsPlayable() {
+        let aac = format(
+            itag: 140,
+            mimeType: "audio/mp4 mp4a.40.2",
+            bitrate: 128_000,
+            audioQuality: "AUDIO_QUALITY_MEDIUM"
+        )
+
+        XCTAssertEqual(AudioFormatSelector.selectBest(from: [aac])?.itag, 140)
+    }
+
     func testMalformedMimeTypeIsRejectedSafely() {
         let malformed = format(itag: 999, mimeType: "not-a-real-mime-type", bitrate: 999_000, audioQuality: "AUDIO_QUALITY_HIGH")
         let aac = format(itag: 140, mimeType: #"audio/mp4; codecs="mp4a.40.2""#, bitrate: 128_000, audioQuality: "AUDIO_QUALITY_MEDIUM")
