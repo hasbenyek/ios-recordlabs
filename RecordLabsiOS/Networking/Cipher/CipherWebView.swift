@@ -37,7 +37,8 @@ final class CipherWebView: NSObject, @unchecked Sendable {
         let controller = WKUserContentController()
         config.userContentController = controller
         config.limitsNavigationsToAppBoundDomains = false
-        webView = WKWebView(frame: .zero, configuration: config)
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
         contentController = controller
         super.init()
         for name in Self.messageNames {

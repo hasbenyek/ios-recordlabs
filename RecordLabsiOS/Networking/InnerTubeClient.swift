@@ -42,10 +42,13 @@ actor InnerTubeClient: StreamResolverClient, SearchRequesting {
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         request.setValue("1", forHTTPHeaderField: "X-Goog-Api-Format-Version")
+        let isMusicClient = identity.clientName == "WEB_REMIX" || identity.clientName == "ANDROID_MUSIC"
+        let origin = isMusicClient ? YouTubeClientIdentity.originYouTubeMusic : "https://www.youtube.com"
+        let referer = isMusicClient ? YouTubeClientIdentity.refererYouTubeMusic : "https://www.youtube.com/"
         request.setValue(identity.clientId, forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(identity.clientVersion, forHTTPHeaderField: "X-YouTube-Client-Version")
-        request.setValue(YouTubeClientIdentity.originYouTubeMusic, forHTTPHeaderField: "X-Origin")
-        request.setValue(YouTubeClientIdentity.refererYouTubeMusic, forHTTPHeaderField: "Referer")
+        request.setValue(origin, forHTTPHeaderField: "X-Origin")
+        request.setValue(referer, forHTTPHeaderField: "Referer")
         request.setValue(identity.userAgent, forHTTPHeaderField: "User-Agent")
         if let visitorData {
             request.setValue(visitorData, forHTTPHeaderField: "X-Goog-Visitor-Id")

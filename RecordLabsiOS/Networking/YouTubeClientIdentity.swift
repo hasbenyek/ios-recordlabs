@@ -135,12 +135,22 @@ struct YouTubeClientIdentity {
         userAgent: "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip"
     )
 
+    static let androidMusic = YouTubeClientIdentity(
+        clientName: "ANDROID_MUSIC",
+        clientVersion: "7.02.51",
+        clientId: "21",
+        userAgent: "com.google.android.apps.youtube.music/7.02.51 (Linux; U; Android 14) Cronet/124.0.6367.82",
+        osName: "Android",
+        osVersion: "14",
+        usesSignatureTimestamp: true
+    )
+
     /// Ordered, no-PoToken playback fallbacks mirrored from Android. A
     /// response may use either a direct URL or a signature cipher; the
     /// resolver handles both before proceeding to the next client.
     static let playbackFallbackOrder: [YouTubeClientIdentity] = [
         .visionOS, .androidVR, .androidVRCurrent, .tvEmbedded,
-        .iOS, .iPadOS, .androidNoSDK, .androidMobile,
+        .androidMusic, .iOS, .iPadOS, .androidNoSDK, .androidMobile,
     ]
 
     /// The Android ("MOBILE") client — per `YouTubeClient.kt`, it needs a
