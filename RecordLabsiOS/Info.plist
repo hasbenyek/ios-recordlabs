@@ -22,6 +22,10 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>RecordLabs uses your local network to find nearby devices for Listen Together sessions.</string>
     <key>NSBonjourServices</key>

@@ -17,7 +17,11 @@ enum AudioFormatSelector {
     /// *within* the same quality tier.
     static func selectBest(from formats: [PlayerResponse.StreamingData.Format]) -> PlayerResponse.StreamingData.Format? {
         formats
-            .filter { $0.isAudioOnly && $0.isAACCompatible }
+            // The MIME type is the authoritative container signal. Some
+            // current InnerTube responses attach an incidental width field
+            // to adaptive audio, so requiring isAudioOnly here can reject a
+            // valid AAC stream even though it is clearly audio/mp4.
+            .filter { $0.isAACCompatible }
             .sorted { lhs, rhs in
                 let lRank = qualityRank(lhs.audioQuality)
                 let rRank = qualityRank(rhs.audioQuality)

@@ -78,9 +78,9 @@ enum SearchResponseParser {
         } else if songs.isEmpty {
             metrics.finalErrorCategory = "noUsableSongs"
         }
-        if metrics.rejectedMissingVideoId > 0 { messages.append("Rejected \\(metrics.rejectedMissingVideoId) candidate(s) without videoId") }
-        if metrics.rejectedMissingTitle > 0 { messages.append("Rejected \\(metrics.rejectedMissingTitle) candidate(s) without title") }
-        if metrics.rejectedMissingArtist > 0 { messages.append("Rejected \\(metrics.rejectedMissingArtist) candidate(s) without artist") }
+        if metrics.rejectedMissingVideoId > 0 { messages.append("Rejected \(metrics.rejectedMissingVideoId) candidate(s) without videoId") }
+        if metrics.rejectedMissingTitle > 0 { messages.append("Rejected \(metrics.rejectedMissingTitle) candidate(s) without title") }
+        if metrics.rejectedMissingArtist > 0 { messages.append("Rejected \(metrics.rejectedMissingArtist) candidate(s) without artist") }
         if !messages.isEmpty { searchParserLog.warning("\(messages.joined(separator: "; "), privacy: .public)") }
         return ParseResult(songs: songs, diagnostics: messages, metrics: metrics)
     }
