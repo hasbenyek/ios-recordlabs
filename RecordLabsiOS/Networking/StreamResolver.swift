@@ -40,9 +40,7 @@ enum StreamResolver {
             } catch let error as PlayerError {
                 if case .cipherFailure = error { lastCipherError = error }
             } catch {
-                // A client-specific HTTP/decode failure must not prevent a
-                // later client from supplying a playable stream.
-                continue
+                lastCipherError = .cipherFailure(error.localizedDescription)
             }
         }
 
@@ -50,8 +48,8 @@ enum StreamResolver {
             throw PlayerError.streamResolutionFailure("No audio formats were returned by any client")
         }
         if let lastCipherError { throw lastCipherError }
-        if formatsSeen.contains(where: { $0.hasPrefix("audio/mp4") }) {
-            throw PlayerError.streamResolutionFailure("AAC/MP4 was returned, but none of the attempted clients supplied a usable stream URL or cipher")
+        if formatsSeen.contains(where: { $0.lowercased().contains("audio/mp4") || $0.lowercased().contains("mp4a") }) {
+            throw PlayerError.streamResolutionFailure("AAC/MP4 format was found, but none of the attempted clients supplied a playable stream URL")
         }
         throw PlayerError.unsupportedFormat(availableFormats: Array(formatsSeen).sorted())
     }

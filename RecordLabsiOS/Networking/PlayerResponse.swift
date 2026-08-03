@@ -28,9 +28,11 @@ struct PlayerResponse: Decodable {
             /// Some Innertube client responses use this legacy alias instead
             /// of `signatureCipher`. Android accepts either field.
             var cipher: String? = nil
+            /// Snake-case key used by some YouTube client responses.
+            var signature_cipher: String? = nil
 
             var streamCipher: String? {
-                signatureCipher ?? cipher
+                signatureCipher ?? cipher ?? signature_cipher
             }
 
             /// `"audio/mp4"` / `"audio/webm"` — the part of `mimeType`
@@ -41,21 +43,29 @@ struct PlayerResponse: Decodable {
 
             /// The `codecs="..."` value, e.g. `"mp4a.40.2"` or `"opus"`.
             var codec: String? {
-                if let range = mimeType.range(of: #"codecs\s*=\s*"([^"]+)""#, options: .regularExpression) {
-                    let match = mimeType[range]
-                    if let inner = match.range(of: #"(?<=")[^"]+(?=")"#, options: .regularExpression) {
-                        return String(match[inner])
+                if let range = mimeType.range(of: #"codecs\s*=\s*["']?([^"',;\s]+)["']?"#, options: .regularExpression) {
+                    let match = String(mimeType[range])
+                    if let innerRange = match.range(of: #"(?<=codecs\s*=\s*["']?)[^"',;\s]+(?=["']?)"#, options: .regularExpression) {
+                        return String(match[innerRange])
                     }
                 }
 
                 // Some InnerTube responses omit the codecs= parameter and
                 // append the codec as a plain token, e.g. "audio/mp4 mp4a.40.2".
-                // Keep this fallback strict: only an explicit mp4a token is accepted.
                 return mimeType
                     .split { $0 == ";" || $0 == "," || $0.isWhitespace }
                     .dropFirst()
-                    .first { $0.lowercased().hasPrefix("mp4a.") }
-                    .map(String.init)
+                    .first { token in
+                        let lower = token.lowercased()
+                        return lower.hasPrefix("mp4a.") || lower == "opus" || lower.hasPrefix("codecs=")
+                    }
+                    .map { token -> String in
+                        let lower = token.lowercased()
+                        if lower.hasPrefix("codecs=") {
+                            return String(token.dropFirst(7).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")))
+                        }
+                        return String(token)
+                    }
             }
 
             var isAudioOnly: Bool {
@@ -68,13 +78,12 @@ struct PlayerResponse: Decodable {
             /// `AVPlayer`/AVFoundation does not decode WebM containers or
             /// Opus audio (a platform limitation, not something InnerTube
             /// reports) — unlike Android's ExoPlayer, which plays Opus/WebM
-            /// natively and actually *prefers* it
-            /// (`YTPlayerUtils.kt findFormat`'s codec scoring: opus=2 >
-            /// mp4a=1). iOS must instead require AAC-in-MP4 and explicitly
-            /// reject WebM/Opus rather than picking "whatever has the
-            /// highest bitrate".
+            /// natively. iOS requires AAC-in-MP4.
             var isAACCompatible: Bool {
-                container.lowercased() == "audio/mp4" && (codec?.lowercased().hasPrefix("mp4a") ?? false)
+                let lowerContainer = container.lowercased()
+                let isMp4 = lowerContainer == "audio/mp4" || lowerContainer.hasPrefix("audio/mp4")
+                let codecLower = codec?.lowercased() ?? ""
+                return isMp4 && (codecLower.hasPrefix("mp4a") || mimeType.lowercased().contains("mp4a"))
             }
         }
 

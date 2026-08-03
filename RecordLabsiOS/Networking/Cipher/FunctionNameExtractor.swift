@@ -49,6 +49,8 @@ enum FunctionNameExtractor {
         try! NSRegularExpression(pattern: #"\bm=([a-zA-Z0-9$]{2,})\(decodeURIComponent\(h\.s\)\)"#),
         try! NSRegularExpression(pattern: #"\bc\s*&&\s*d\.set\([^,]+\s*,\s*(?:encodeURIComponent\s*\()([a-zA-Z0-9$]+)\("#),
         try! NSRegularExpression(pattern: #"\bc\s*&&\s*[a-z]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("#),
+        try! NSRegularExpression(pattern: #"([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9$]+\)\s*\{\s*[a-zA-Z0-9$]+\s*=\s*[a-zA-Z0-9$]+\.split\(""\)"#),
+        try! NSRegularExpression(pattern: #"\b([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9$]+\)\s*\{[^\}]*?\.split\(""\)[^\}]*?\.join\(""\)"#),
     ]
 
     private static let nFunctionPatterns = [
@@ -57,6 +59,7 @@ enum FunctionNameExtractor {
         try! NSRegularExpression(pattern: #"\.get\("n"\);if\([a-zA-Z0-9$]+\)\s*\{[^}]*match"#),
         try! NSRegularExpression(pattern: #"\(\s*([a-zA-Z0-9$]+)\s*=\s*String\.fromCharCode\(110\)"#),
         try! NSRegularExpression(pattern: #"([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9]\)\s*\{[^}]*?enhanced_except_"#),
+        try! NSRegularExpression(pattern: #"([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9$]+\)\s*\{[^\}]*?\.get\("n"\)"#),
     ]
 
     private static func group(_ match: NSTextCheckingResult, _ index: Int, in string: String) -> String? {

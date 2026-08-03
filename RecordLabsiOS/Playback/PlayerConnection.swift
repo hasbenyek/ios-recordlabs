@@ -53,6 +53,8 @@ final class PlayerConnection: ObservableObject {
     var canSkipNext: Bool { currentIndex < queue.count - 1 }
 
     init() {
+        configureAudioSession()
+
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
             guard time.isNumeric else { return }
             Task { @MainActor in
@@ -71,6 +73,16 @@ final class PlayerConnection: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.handleTrackFinished() }
+        }
+    }
+
+    private func configureAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            // Non-fatal if session setup fails (e.g. unit tests or simulator environment)
         }
     }
 
